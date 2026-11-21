@@ -1,0 +1,3948 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>彩色派对</title>
+<style>
+  /* ================= 一、启动界面样式 ================= */
+  body, html {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #ffffff;
+  }
+
+  #rotate-tip {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    color: #fff;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    text-align: center;
+    padding: 20px;
+  }
+
+  #app {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+    background: #ffffff;
+    overflow: hidden;
+  }
+
+  .avatar-wrap {
+    position: absolute;
+    bottom: 2%;
+    left: 10vw;
+    width: 90vh;
+    max-width: 760px;
+    z-index: 10;
+  }
+  .avatar-wrap img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .right-bottom-group {
+    position: absolute;
+    bottom: 15%;
+    right: 10vw;
+    width: 81vh;
+    max-width: 630px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 10;
+  }
+
+  .party {
+    width: 100%;
+  }
+  .party img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .btn-start {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    outline: none;
+    width: 52.5vh;
+    max-width: 450px;
+    position: absolute;
+    bottom: -7.5vh;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+  }
+  .btn-start img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  /* 游戏玩法挂载点：注意这里补了 position:relative 和 overflow:hidden */
+  #game-container {
+    display: none;
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ================= 二、玩法界面样式 ================= */
+  body {
+    font-family: Arial, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+
+  canvas { display: block; background-color: #ffffff; }
+
+  /* 右上角暂停按钮 */
+  #btn-pause {
+    position: absolute; top: 15px; right: 15px;
+    width: 40px; height: 40px;
+    background-color: rgba(0, 0, 0, 0.1); border: 2px solid #333;
+    border-radius: 8px; color: #333; font-weight: bold; font-size: 18px;
+    display: flex; justify-content: center; align-items: center;
+    user-select: none; touch-action: none; z-index: 30; cursor: pointer;
+  }
+  #btn-pause:active { background-color: rgba(0, 0, 0, 0.3); }
+
+  /* ===== 暂停态专用遮罩层 =====
+     以前“暂停”两字是直接在 canvas 上画的，切出游戏后这块文字会残留，
+     因为 canvas 上下文没被清理。现在改成独立的 DOM 遮罩层，
+     随 setPaused() 同步显隐，返回派对选择时一并隐藏，不会有残留。 */
+  #pause-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.42);
+    z-index: 26;
+    pointer-events: none;
+    font-family: Arial, sans-serif;
+  }
+  #pause-overlay.show { display: flex; }
+  #pause-overlay .pause-text {
+    font-size: 56px;
+    font-weight: bold;
+    color: #333;
+    text-shadow: 0 2px 8px rgba(255,255,255,0.6);
+    animation: pausePop 0.18s ease-out;
+  }
+  @keyframes pausePop {
+    from { opacity: 0; transform: scale(0.7); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  /* ===== 返回派对选择时的过渡动画 =====
+     从游戏画面切回派对选择界面时，做一个短促的淡入淡出，
+     让画面切换不那么突兀。 */
+  #game-container.fading-out {
+    animation: gameFadeOut 0.18s ease-in forwards;
+  }
+  @keyframes gameFadeOut {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+  }
+
+  /* ===== 暂停态下显示的 back.png 返回按钮 =====
+     定位规则：始终贴在 #btn-pause 正下方，跟随暂停按钮走，
+     不会挡到左上角播报栏、顶部计分条和右下角跳/开火键。
+     默认隐藏，只有游戏处于暂停态时才显示。 */
+  #btn-pause-back {
+    position: absolute;
+    /* 右上角对齐暂停按钮，top/right 与 #btn-pause 保持一致（15px） */
+    top: 65px;        /* 40px 暂停按钮高 + 10px 间距 */
+    right: 15px;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    border: 2px solid #333;
+    overflow: hidden;
+    display: none;     /* 默认隐藏，由暂停态控制 */
+    z-index: 31;       /* 高于暂停按钮，保证可点击 */
+    cursor: pointer;
+    padding: 0;
+    background: #fff;
+    user-select: none;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #btn-pause-back.show { display: block; }
+  #btn-pause-back img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  #btn-pause-back:active { opacity: 0.7; transform: scale(0.94); }
+
+  /* 左上角击杀与道具播报栏 */
+  #kill-feed {
+    position: absolute; top: 15px; left: 15px;
+    display: flex; flex-direction: column; gap: 6px;
+    pointer-events: none; z-index: 20;
+  }
+  .feed-msg {
+    background-color: rgba(80, 80, 80, 0.75);
+    color: #fff;
+    padding: 6px 12px; border-radius: 6px;
+    font-size: 14px; font-weight: bold;
+    text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    animation: slideIn 0.3s ease-out;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .feed-msg.fade-out {
+    animation: fadeOut 0.5s ease-in forwards;
+  }
+  @keyframes fadeOut {
+    to { opacity: 0; transform: translateY(-10px); }
+  }
+
+  /* 右侧操作按键 */
+  .btn {
+    position: absolute; bottom: 30px;
+    background-color: rgba(0, 191, 255, 0.2);
+    border: 2px solid rgba(0, 191, 255, 0.7);
+    color: #0a1a3a; font-weight: bold;
+    display: flex; justify-content: center; align-items: center;
+    border-radius: 50%; user-select: none; touch-action: none; z-index: 10;
+  }
+  .btn:active { background-color: rgba(0, 191, 255, 0.6); }
+
+  #btn-jump {
+    width: 70px; height: 70px; right: 20px; font-size: 18px;
+    background-color: rgba(138, 43, 226, 0.2); border-color: rgba(138, 43, 226, 0.7);
+    bottom: 110px;
+  }
+  #btn-shoot {
+    width: 80px; height: 80px; right: 20px; font-size: 20px;
+    background-color: rgba(255, 0, 0, 0.2); border-color: rgba(255, 0, 0, 0.7);
+    color: #ff3333; bottom: 30px;
+  }
+
+  /* 装填进度条 */
+  #reload-bar-container {
+    position: absolute; right: 20px; bottom: 115px;
+    width: 80px; height: 8px; background-color: #333;
+    border-radius: 4px; overflow: hidden; display: none; z-index: 10;
+    border: 1px solid #000;
+  }
+  #reload-bar {
+    width: 100%; height: 100%; background-color: #FF8C00;
+    transform-origin: left; transform: scaleX(0);
+  }
+
+  /* 虚拟摇杆 */
+  #joystick-zone {
+    position: absolute; bottom: 0; left: 0;
+    width: 50%; height: 50%;
+    z-index: 20; touch-action: none;
+  }
+  #joystick-base {
+    position: absolute; bottom: 40px; left: 40px;
+    width: 120px; height: 120px;
+    background-color: rgba(0, 191, 255, 0.1);
+    border: 2px solid rgba(0, 191, 255, 0.4);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  #joystick-stick {
+    position: absolute; top: 50%; left: 50%;
+    width: 50px; height: 50px;
+    background-color: rgba(0, 191, 255, 0.6);
+    border: 2px solid #00bfff;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  #loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #666; font-size: 16px; text-align: center;
+  }
+
+  /* ================= 纯白中间界面 ================= */
+  #white-screen {
+    display: none;
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #ffffff;
+    z-index: 5000;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #white-screen.show {
+    display: flex;
+  }
+  .ws-left, .ws-right {
+    width: 50%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ws-left img, .ws-right img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+  }
+
+  /* 右上角返回按钮 */
+  #ws-back {
+    position: absolute;
+    top: 3%;
+    right: 3%;
+    width: 11vh;
+    max-width: 130px;
+    min-width: 64px;
+    height: auto;
+    cursor: pointer;
+    z-index: 5010;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #ws-back:active {
+    opacity: 0.7;
+    transform: scale(0.96);
+  }
+
+  /* 右侧 option_selection.png 的图片容器，作为热区定位基准 */
+  .option-wrap {
+    position: relative;
+    width: 46vw;
+    max-width: 620px;
+    min-width: 240px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .option-wrap > img {
+    width: 100%;
+    height: auto;
+    max-height: 90%;
+    object-fit: contain;
+    display: block;
+  }
+  /*
+   * 四个按钮热区：改成「左列 / 右列」两列布局。
+   * 原来 left:15% right:15% 是通栏横条，四个热区会上下叠成一整行、
+   * 甚至溢出图片容器；现在按 option_selection.png 上四个按钮
+   * 的真实像素边界，转成图片容器 (.option-wrap) 的百分比。
+   *
+   * 边界来源（按你调试图的截图，换算为容器百分比）：
+   *   列：左列 x 约 7%~51%，右列 x 约 49%~93%
+   *   行：第一行 y 约 30%~49%，第二行 y 约 50%~69%
+   * 行高统一 19%，列宽统一 44%，左右两列之间留 2% 缝隙，
+   * 避免热区互相重叠导致上层抢点击。
+   */
+  .option-wrap .hot {
+    position: absolute;
+    width: 44%;            /* 单列宽度，不再是通栏 */
+    height: 19%;           /* 单行高度，贴合按钮实际行高 */
+    cursor: pointer;
+    z-index: 5020;
+    -webkit-tap-highlight-color: transparent;
+    border-radius: 10px;    /* 调试色块圆角，更贴近按钮轮廓 */
+    /* 调试时打开边框可直观确认位置（建议只开一个看对齐）：
+    border: 1px solid rgba(255,0,0,0.6); */
+  }
+  /* 左列：射击派对（上）、保卫派对（下） */
+  .option-wrap .hot-left-1 { top: 30%; left: 7%; }   /* 射击派对 */
+  .option-wrap .hot-left-2 { top: 50%; left: 7%; }   /* 保卫派对 */
+  /* 右列：载具派对（上）、限时活动派对（下） */
+  .option-wrap .hot-right-1 { top: 30%; left: 49%; } /* 载具派对 */
+  .option-wrap .hot-right-2 { top: 50%; left: 49%; } /* 限时活动派对 */
+
+  /* 纯白界面2 */
+  #white-screen2 {
+    position: fixed;
+    inset: 0;
+    background: #ffffff;
+    z-index: 6000;
+    display: none;
+  }
+  #white-screen2.show {
+    display: block;
+  }
+  /* 纯白界面2 右上角返回按钮 */
+  #ws2-back {
+    position: absolute;
+    top: 3%;
+    right: 3%;
+    width: 11vh;
+    max-width: 130px;
+    min-width: 64px;
+    height: auto;
+    cursor: pointer;
+    z-index: 6010;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #ws2-back:active {
+    opacity: 0.7;
+    transform: scale(0.96);
+  }
+
+  /* ================= 五、游戏内底部提示条 ================= */
+  #game-hint {
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 12px;
+    padding: 6px 14px;
+    border-radius: 14px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 25;
+    display: none;
+  }
+
+  /* ================= 调试：热区可视化（正式发布可整段删除） ================= */
+  /*
+   * 说明：派对选择界面四个按钮热区(.hot)是按百分比定位的。
+   * 打开下面这段，会在画面上叠加半透明色块，直观看到每个热区
+   * 是否真正盖住了 option_selection.png 上的四个按钮文字。
+   * 建议校准时一次只打开一个 top 值，避免色块互相遮挡。
+   */
+  body.show-hot .option-wrap .hot {
+    outline: 2px dashed rgba(255, 0, 0, 0.85);
+    background-color: rgba(255, 60, 60, 0.18);
+  }
+  /* 左上=红 / 右上=橙 / 左下=绿 / 右下=蓝，一次看四个不遮挡 */
+  body.show-hot .option-wrap .hot-left-1  { background-color: rgba(255, 60, 60, 0.30); }   /* 射击派对 左上 */
+  body.show-hot .option-wrap .hot-right-1 { background-color: rgba(255, 165, 0, 0.30); }   /* 载具派对 右上 */
+  body.show-hot .option-wrap .hot-left-2  { background-color: rgba(0, 200, 120, 0.30); }   /* 保卫派对 左下 */
+  body.show-hot .option-wrap .hot-right-2 { background-color: rgba(0, 120, 255, 0.30); }   /* 限时活动派对 右下 */
+  /* 调试开关按钮：在派对选择界面左上角，点击可开关色块显示 */
+  #hot-debug-btn {
+    position: absolute;
+    top: 3%;
+    left: 3%;
+    z-index: 5025;
+    padding: 8px 12px;
+    font-size: 13px;
+    border-radius: 8px;
+    border: 2px solid #333;
+    background: #fff;
+    color: #333;
+    cursor: pointer;
+    display: none;
+    font-family: Arial, sans-serif;
+  }
+  #white-screen.show ~ #hot-debug-btn,
+  body:has(#white-screen.show) #hot-debug-btn { display: block; }
+  #hot-debug-btn.on { background: #ffeb3b; }
+
+  /* ================= 进入玩法前的确认浮层 ================= */
+  #enter-confirm {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 7000;
+    font-family: Arial, sans-serif;
+  }
+  #enter-confirm.show { display: flex; }
+  .enter-confirm-box {
+    width: 78vw;
+    max-width: 360px;
+    background: #fff;
+    border-radius: 18px;
+    padding: 22px 20px 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    text-align: center;
+    animation: popIn 0.18s ease-out;
+  }
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(0.85); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  .enter-confirm-box .ec-title {
+    font-size: 19px; font-weight: bold; color: #222; margin-bottom: 6px;
+  }
+  .enter-confirm-box .ec-desc {
+    font-size: 13px; color: #666; line-height: 1.6; margin-bottom: 18px;
+  }
+  .enter-confirm-box .ec-row {
+    display: flex; gap: 12px; justify-content: center;
+  }
+  .enter-confirm-box .ec-btn {
+    flex: 1; max-width: 130px;
+    padding: 11px 0;
+    border-radius: 24px;
+    border: 2px solid #333;
+    background: #fff; color: #333;
+    font-size: 15px; font-weight: bold; cursor: pointer;
+    font-family: Arial, sans-serif;
+  }
+  .enter-confirm-box .ec-btn.ok {
+    background: #4caf50; border-color: #4caf50; color: #fff;
+  }
+  .enter-confirm-box .ec-btn:active { transform: scale(0.95); }
+
+  /* ================= 保卫派对：进入确认浮层（样式与通用浮层共用变量） ================= */
+  #enter-confirm-defend {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 7200;             /* 高于射击派对浮层，处于最上层 */
+    font-family: Arial, sans-serif;
+  }
+  #enter-confirm-defend.show { display: flex; }
+  #enter-confirm-defend .enter-confirm-box {
+    width: 78vw;
+    max-width: 360px;
+    background: #fff;
+    border-radius: 18px;
+    padding: 22px 20px 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    text-align: center;
+    animation: popIn 0.18s ease-out;
+  }
+  #enter-confirm-defend .enter-confirm-box .ec-title { font-size: 19px; font-weight: bold; color: #222; margin-bottom: 6px; }
+  #enter-confirm-defend .enter-confirm-box .ec-desc  { font-size: 13px; color: #666; line-height: 1.6; margin-bottom: 18px; }
+  #enter-confirm-defend .enter-confirm-box .ec-row   { display: flex; gap: 12px; justify-content: center; }
+  #enter-confirm-defend .enter-confirm-box .ec-btn {
+    flex: 1; max-width: 130px; padding: 11px 0;
+    border-radius: 24px; border: 2px solid #333;
+    background: #fff; color: #333;
+    font-size: 15px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif;
+  }
+  #enter-confirm-defend .enter-confirm-box .ec-btn.ok { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+  #enter-confirm-defend .enter-confirm-box .ec-btn:active { transform: scale(0.95); }
+
+  /* ================= 保卫派对：独立纯白界面 =================
+     新建的独立容器，不复用 #white-screen2。
+     按需求：纯白、无任何内容、不带返回按钮。 */
+  #white-screen-defend {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #ffffff;
+    z-index: 6500;             /* 介于派对选择(5000)与浮层(7000+)之间 */
+    display: none;
+  }
+  #white-screen-defend.show {
+    display: block;
+  }
+
+  /* ===== 保卫派对：游戏失败后的独立纯白界面 =====
+     任意 whalegirl.png 碰到 granary.png → 游戏失败、循环停止、显示本界面。
+     纯白底；正中央放 whalegirldancing.gif 动图，右上角放一个可交互的 back.png。
+     z-index:6800 高于游玩界面(6500)、低于进入确认浮层(7000/7200)；
+     盖住游玩界面后，玩家只能点右上角返回。 */
+  #white-screen-defend-fail {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #ffffff;
+    z-index: 6800;
+    display: none;
+  }
+  #white-screen-defend-fail.show {
+    display: block;
+  }
+  #ws-defend-fail-back {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    width: 40px;
+    height: 40px;
+    border: 2px solid #333;
+    border-radius: 8px;
+    background: #fff;
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+    z-index: 6810;
+    user-select: none;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #ws-defend-fail-back img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  #ws-defend-fail-back:active {
+    opacity: 0.7;
+    transform: scale(0.94);
+  }
+
+  /* ===== 失败界面：正中央 whalegirldancing.gif 动图 =====
+     整屏 flex 居中容器，pointer-events:none 不拦截右上角 back.png 的点击；
+     z-index:6805 高于失败界面纯白底、低于返回按钮(6810)。
+     img 等比缩放、不拉伸、不裁切，横竖屏都不出屏；初始 visibility:hidden
+     且不写 src，由 showDefendFailGif() 在失败界面出现时才赋 src 播放。
+     GIF 是否循环由文件自身的循环标记决定，HTML/CSS 无法改写；
+     普通 <img> 会按文件设定自动播放（多数 GIF 为无限循环）。 */
+  #def-fail-gif-wrap {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 6805;
+  }
+  #def-fail-gif {
+    display: block;
+    max-width: min(70vw, 620px);
+    max-height: 70vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+    visibility: hidden;   /* 初始隐藏，由 showDefendFailGif() 打开 */
+  }
+
+  /* ===== 保卫派对：左侧 granary.png =====
+     贴左边缘、纵向贯穿整屏高度，宽度按图片比例自适应，
+     完整保留其竖向窄条构图；压在地面带之上，像立在地面前；
+     不响应事件。 */
+  /* ===== 保卫派对：底部贯通地面（射击派对同款）+ 沙袋 sandbag.png =====
+     按参考图：画面底部横向贯通一条偏薄的浅灰白色地面带，顶部一条
+     细灰地平线；配色与射击派对 canvas 地面一致（#f0f0f0 填充 +
+     #d0d0d0 2px 描边）。沙袋整体缩小后放在画面底部偏左、谷仓
+     (granary.png) 的右下方，底边略微沉入地面带以紧贴地面、不留空隙；
+     谷仓仍立在地面之前、不被地面盖住。
+     地面与沙袋均 pointer-events:none，不响应 DOM 点击（仅作场景装饰）；
+     但 canvas 物理层会按谷仓 / 沙袋的实际渲染矩形做横向碰撞解算，
+     角色无法穿过谷仓，沙袋则可在跳起后从上方越过或站到顶上。
+     暂停压暗遮罩(z27) 会盖住整块地面，右上角暂停按钮与返回照旧。 */
+  #ws-defend-ground {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 9vh;                    /* 偏薄的地面带，随视口缩放 */
+    box-sizing: border-box;         /* 让 2px 地平线算进高度内 */
+    background: #f0f0f0;           /* 与射击派对地面同色 */
+    border-top: 2px solid #d0d0d0; /* 顶部细灰地平线 */
+    z-index: 1;                     /* 垫在谷仓(z2)、沙袋(z3)之下 */
+    pointer-events: none;
+  }
+  /* ===== 保卫派对：沙袋 sandbag.png（缩小并贴近地面）=====
+     按需求把沙袋整体缩小：高度由 26vh 降到 13vh、最大宽度由 40vw
+     收到 22vw，宽度仍按图片比例自适应；位置保持在谷仓右下方、画面
+     底部偏左（left:22vw 不变），横向摆放的构图不受影响。
+     底部由 9vh 下调到 7.5vh，让沙袋底边略微沉入 9vh 高的地面带内
+     （约 1.5vh），消除"悬空感"，视觉上牢牢贴住地面；地面带顶部那条
+     2px 细灰地平线仍从沙袋身后横穿，前后层次关系保持不变。
+     z-index:3 仍高于地面(z1)与谷仓(z2)，暂停遮罩(z27) 依旧盖得住。 */
+  #ws-defend-sandbag {
+    position: absolute;
+    bottom: 7.5vh;         /* 略沉入地面带，紧贴地面、不留空隙 */
+    left: 22vw;            /* 谷仓右侧、画面底部偏左，按参考图定位 */
+    height: 13vh;          /* 缩小后的高度，随视口缩放 */
+    width: auto;           /* 宽度按图片比例自适应 */
+    max-width: 22vw;       /* 缩小后的最大宽度 */
+    display: block;
+    pointer-events: none;  /* 不参与交互，仅场景装饰 */
+    user-select: none;
+    -webkit-user-drag: none;
+    z-index: 3;
+  }
+
+  #ws-defend-granary {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: auto;
+    max-width: none;
+    display: block;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    z-index: 2;            /* 高于地面带(z1)，建筑立在地面前 */
+  }
+
+  /* ===== 保卫派对：右上角暂停按钮（样式同射击派对 #btn-pause）=====
+     可交互：点击切换下方 back.png 的显隐（暂停态切换）。 */
+  #ws-defend-pause {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    width: 40px;
+    height: 40px;
+    background-color: rgba(0, 0, 0, 0.1);
+    border: 2px solid #333;
+    border-radius: 8px;
+    color: #333;
+    font-weight: bold;
+    font-size: 18px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    user-select: none;
+    touch-action: none;
+    z-index: 30;
+    cursor: pointer;           /* 可点击 */
+  }
+  #ws-defend-pause:active { background-color: rgba(0, 0, 0, 0.3); }
+
+  /* ===== 保卫派对：暂停态下的 back.png 返回按钮 =====
+     定位规则：始终贴在 #ws-defend-pause 正下方，右边缘对齐，
+     不遮挡左侧 granary.png 与画面内容。
+     默认隐藏，只有处于暂停态时才显示。 */
+  #ws-defend-pause-back {
+    position: absolute;
+    top: 65px;        /* 40px 暂停按钮高 + 10px 间距 */
+    right: 15px;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    border: 2px solid #333;
+    overflow: hidden;
+    display: none;     /* 默认隐藏，由暂停态控制 */
+    z-index: 31;       /* 高于暂停按钮，保证可点击 */
+    cursor: pointer;
+    padding: 0;
+    background: #fff;
+    user-select: none;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #ws-defend-pause-back.show { display: block; }
+  #ws-defend-pause-back img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  #ws-defend-pause-back:active { opacity: 0.7; transform: scale(0.94); }
+
+  /* ===== 保卫派对：暂停遮罩层（同款复用 #pause-overlay 的视觉样式）=====
+     复用射击派对暂停遮罩的观感：整屏半透明压暗 + 居中“暂停”大字 + 弹出动画。
+     独立一个节点挂在 #white-screen-defend 内，与射击派对互不串状态。
+     z-index 设为 27：压住画面内容（granary.png 等）但不遮挡右上角暂停按钮(30)
+     与暂停态下的 back.png(31)，保证按钮仍可点击。 */
+  #defend-pause-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.42);
+    z-index: 27;
+    pointer-events: none;
+    font-family: Arial, sans-serif;
+  }
+  #defend-pause-overlay.show { display: flex; }
+  #defend-pause-overlay .pause-text {
+    font-size: 56px;
+    font-weight: bold;
+    color: #333;
+    text-shadow: 0 2px 8px rgba(255,255,255,0.6);
+    animation: pausePop 0.18s ease-out;
+  }
+
+  /* ===== 保卫派对：顶部「沙袋剩余血条 VS Deep Seek鲸鱼娘剩余可生成数」对决栏 =====
+     左侧 = sandbag.png 剩余血量(1300/1300)；右侧标签 = Deep Seek鲸鱼娘，
+     数值 = 剩余额度(31/31，即 31 - 累计击杀数)，中间 VS。
+     每有 1 只 whalegirl.png 被击杀（含大号版）右侧数值往下掉 1（3 只 → 28/31），
+     绿条按 剩余/31 同步收缩；补位生成不回涨该数值。
+     两侧血条框统一黑色 2px、剩余填充统一绿色 #32CD32，VS 用红色 #ff3333。
+     顶部居中，max-width 预留左右两侧给播报栏 / 暂停按钮，窄屏也不重叠。
+     z-index:22 高于画布(4)与控件(20)、低于暂停遮罩(27)/暂停按钮(30)/back(31)；
+     暂停时数值随场景冻结、视觉被遮罩压暗，不额外显隐。 */
+  #def-duel-bar {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100vw - 130px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    z-index: 22;
+    pointer-events: none;
+    font-family: Arial, sans-serif;
+    white-space: nowrap;
+  }
+  .def-duel-side {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .def-duel-label {
+    font-size: 12px;
+    font-weight: bold;
+    color: #222;
+    letter-spacing: 0.5px;
+  }
+  .def-duel-track {
+    width: 22vw;
+    max-width: 120px;
+    min-width: 54px;
+    height: 14px;
+    box-sizing: border-box;
+    border: 2px solid #000;              /* 黑色血条框 */
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.92);
+    overflow: hidden;
+  }
+  .def-duel-fill {
+    width: 100%;
+    height: 100%;
+    background: #32CD32;                 /* 绿色剩余 */
+    transform-origin: left center;
+    transform: scaleX(1);
+    transition: transform 0.12s linear;
+  }
+  .def-duel-num {
+    font-size: 11px;
+    font-weight: bold;
+    color: #222;
+    min-width: 30px;
+    text-align: center;
+  }
+  /* 右侧标签变长("Deep Seek鲸鱼娘")、数值变长("31/31")的适配：
+     只给右侧三个元素单独微调，左侧沙袋那一侧的样式一字不动。
+     标签缩到 11px 并去掉字距，血条略收窄、数值位略加宽，
+     保证顶部居中栏在窄屏下也不挤压、不换行（父级已有 white-space:nowrap）。 */
+  #def-duel-whale-label {
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+  #def-duel-whale-track {
+    width: 18vw;
+    max-width: 96px;
+    min-width: 40px;
+  }
+  #def-duel-whale-num {
+    min-width: 38px;
+  }
+  #def-duel-vs {
+    color: #ff3333;                      /* 红色 VS */
+    font-size: 20px;
+    font-weight: bold;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.18);
+    padding: 0 2px;
+  }
+
+  /* ================= 保卫派对：角色控制 UI + 独立场景画布 =================
+     控件与射击派对 #game-container 内完全同款（摇杆 / 跳 / 开火 / 播报栏），
+     但统一使用 def- 前缀的独立 id，不与射击派对的 DOM 与事件串状态。
+     层级：地面z1 < 谷仓z2 < 沙袋z3 < 场景画布z4 < 控件z20
+           < 暂停遮罩z27 < 暂停按钮z30 < back.png z31
+     暂停时遮罩压暗整块画面（含控件），控件交互另由 JS 在 defendPaused 时拦截。
+     按需求：不显示计分榜、不显示装填条，只保留摇杆 / 跳 / 开火 / 播报栏。 */
+  #defendCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: block;
+    background: transparent;      /* 透出底下的纯白底与浅灰地面带 */
+    z-index: 4;
+    pointer-events: none;
+  }
+
+  /* ===== 保卫派对：左上角播报栏（与射击派对 #kill-feed / .feed-msg 同款）=====
+     布局、半透明灰底、白字、圆角、入场 / 淡出动画、z-index、
+     pointer-events:none 全部与射击派对逐条一致；独立 id 前缀 def- 只是为避免
+     与 #kill-feed 串 DOM，消息元素同时挂 .feed-msg 类以复用射击派对样式。
+     本局【只播 3 句固定文案】（击退 / 又来了 / 大号登场），
+     不推送入场提示、伤害数字、击杀数或任何其它内容。 */
+  #def-kill-feed {
+    position: absolute; top: 15px; left: 15px;
+    display: flex; flex-direction: column; gap: 6px;
+    pointer-events: none; z-index: 20;
+  }
+  /* .def-feed-msg 与射击派对 .feed-msg 逐条一致；动画直接复用射击派对全局
+     slideIn / fadeOut，不再另起 def- 前缀别名，保证两边观感完全相同。 */
+  .def-feed-msg {
+    background-color: rgba(80, 80, 80, 0.75);
+    color: #fff;
+    padding: 6px 12px; border-radius: 6px;
+    font-size: 14px; font-weight: bold;
+    text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    animation: slideIn 0.3s ease-out;
+  }
+  .def-feed-msg.fade-out { animation: fadeOut 0.5s ease-in forwards; }
+
+  /* 左侧圆形虚拟摇杆（同射击派对 #joystick-*） */
+  #def-joystick-zone {
+    position: absolute; bottom: 0; left: 0;
+    width: 50%; height: 50%;
+    z-index: 20; touch-action: none;
+  }
+  #def-joystick-base {
+    position: absolute; bottom: 40px; left: 40px;
+    width: 120px; height: 120px;
+    background-color: rgba(0, 191, 255, 0.1);
+    border: 2px solid rgba(0, 191, 255, 0.4);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  #def-joystick-stick {
+    position: absolute; top: 50%; left: 50%;
+    width: 50px; height: 50px;
+    background-color: rgba(0, 191, 255, 0.6);
+    border: 2px solid #00bfff;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  /* 右侧「跳」紫圈 /「开火」红圈（同射击派对 .btn） */
+  #def-btn-jump, #def-btn-shoot {
+    position: absolute;
+    font-weight: bold;
+    display: flex; justify-content: center; align-items: center;
+    border-radius: 50%;
+    user-select: none; touch-action: none; z-index: 20;
+  }
+  #def-btn-jump {
+    width: 70px; height: 70px; right: 20px; bottom: 110px; font-size: 18px;
+    color: #0a1a3a;
+    background-color: rgba(138, 43, 226, 0.2);
+    border: 2px solid rgba(138, 43, 226, 0.7);
+  }
+  #def-btn-shoot {
+    width: 80px; height: 80px; right: 20px; bottom: 30px; font-size: 20px;
+    color: #ff3333;
+    background-color: rgba(255, 0, 0, 0.2);
+    border: 2px solid rgba(255, 0, 0, 0.7);
+  }
+  #def-btn-jump:active  { background-color: rgba(138, 43, 226, 0.6); }
+  #def-btn-shoot:active { background-color: rgba(255, 0, 0, 0.6); }
+
+  /* ===== 退出本局确认浮层 =====
+     点 back.png 返回前先问一句，防止误触丢进度。
+     与进入玩法前的确认浮层共用同一套动画与布局变量。 */
+  #exit-confirm {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 7100;
+    font-family: Arial, sans-serif;
+  }
+  #exit-confirm.show { display: flex; }
+  #exit-confirm .exit-confirm-box {
+    width: 78vw;
+    max-width: 360px;
+    background: #fff;
+    border-radius: 18px;
+    padding: 22px 20px 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    text-align: center;
+    animation: popIn 0.18s ease-out;
+  }
+  #exit-confirm .exit-confirm-box .ec-title { font-size: 19px; font-weight: bold; color: #222; margin-bottom: 6px; }
+  #exit-confirm .exit-confirm-box .ec-desc  { font-size: 13px; color: #666; line-height: 1.6; margin-bottom: 18px; }
+  #exit-confirm .exit-confirm-box .ec-row   { display: flex; gap: 12px; justify-content: center; }
+  #exit-confirm .exit-confirm-box .ec-btn {
+    flex: 1; max-width: 130px; padding: 11px 0;
+    border-radius: 24px; border: 2px solid #333;
+    background: #fff; color: #333;
+    font-size: 15px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif;
+  }
+  #exit-confirm .exit-confirm-box .ec-btn.ok { background: #e53935; border-color: #e53935; color: #fff; }
+  #exit-confirm .exit-confirm-box .ec-btn:active { transform: scale(0.95); }
+</style>
+</head>
+<body>
+
+  <!-- 横屏提示 -->
+  <div id="rotate-tip">
+    <p>请旋转手机至横屏游玩</p>
+  </div>
+
+  <!-- 一、启动界面 -->
+  <div id="app">
+    <div class="avatar-wrap">
+      <img src="catgirl112.png" alt="Avatar">
+    </div>
+    <div class="right-bottom-group">
+      <div class="party">
+        <img src="heart pattern 1.png" alt="彩色派对 Color Party">
+      </div>
+      <button class="btn-start" id="startBtn">
+        <img src="Interactive Button 2.png" alt="开始游戏">
+      </button>
+    </div>
+  </div>
+
+  <!-- 二、玩法挂载点：玩法的全部元素都放进这个容器 -->
+  <div id="game-container">
+    <div id="loading">图片加载中...<br><span style="font-size:12px; color:#999;">(确保所有图片在同一文件夹)</span></div>
+
+    <!-- 右上角暂停 -->
+    <div id="btn-pause">||</div>
+
+    <!-- 暂停态返回按钮：默认隐藏，暂停时才显示，紧贴暂停按钮下方 -->
+    <button id="btn-pause-back" type="button" aria-label="暂停返回">
+      <img src="back.png" alt="返回">
+    </button>
+
+    <!-- 暂停态专用遮罩层：由 setPaused() 控制，替代原先在 canvas 上画“暂停”文字 -->
+    <div id="pause-overlay"><div class="pause-text">暂停</div></div>
+
+    <!-- 左上角播报栏 -->
+    <div id="kill-feed"></div>
+
+    <!-- 虚拟摇杆区域 -->
+    <div id="joystick-zone">
+      <div id="joystick-base">
+        <div id="joystick-stick"></div>
+      </div>
+    </div>
+
+    <div id="btn-jump" class="btn">跳</div>
+    <div id="btn-shoot" class="btn">开火</div>
+
+    <div id="reload-bar-container"><div id="reload-bar"></div></div>
+
+    <canvas id="gameCanvas"></canvas>
+  </div>
+
+  <!-- 三、纯白中间界面：点击“开始游戏”后进入，游戏玩法不运行 -->
+  <div id="white-screen">
+    <img id="ws-back" src="back.png" alt="返回">
+    <div class="ws-left">
+      <img src="catgirl113.png" alt="角色立绘">
+    </div>
+    <div class="ws-right">
+      <div class="option-wrap">
+        <img src="option_selection.png" alt="派对选择">
+        <!-- 左上：射击派对 -->
+        <div class="hot hot-left-1" data-mode="shoot" title="射击派对"></div>
+        <!-- 右上：载具派对 -->
+        <div class="hot hot-right-1" data-mode="vehicle" title="载具派对"></div>
+        <!-- 左下：保卫派对 -->
+        <div class="hot hot-left-2" data-mode="defend" title="保卫派对"></div>
+        <!-- 右下：限时活动派对 -->
+        <div class="hot hot-right-2" data-mode="limited" title="限时活动派对"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 调试用：热区可视化开关（仅在派对选择界面显示） -->
+  <button id="hot-debug-btn" type="button">热区调试：关</button>
+
+  <!-- 四、纯白界面2：点击“射击派对”后进入，这里承载真正的游戏玩法 -->
+  <div id="white-screen2">
+    <img id="ws2-back" src="back.png" alt="返回">
+    <div id="game-hint">射击派对 · 摇杆移动 / 跳 / 开火 · 捡对讲机呼叫坦克 · 捡急救包回血</div>
+  </div>
+
+  <!-- 退出本局确认浮层：点 back.png 时弹出，防止误触丢进度 -->
+  <div id="exit-confirm">
+    <div class="exit-confirm-box">
+      <div class="ec-title">退出本局？</div>
+      <div class="ec-desc">当前进度将不会保存，<br>确定要返回派对选择吗？</div>
+      <div class="ec-row">
+        <button class="ec-btn" id="exit-cancel" type="button">继续玩</button>
+        <button class="ec-btn ok" id="exit-ok" type="button">退出</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 进入玩法前的确认浮层 -->
+  <div id="enter-confirm">
+    <div class="enter-confirm-box">
+      <div class="ec-title">进入 射击派对</div>
+      <div class="ec-desc">已为你装备好对讲机与急救包。<br>准备好了就出发吧！</div>
+      <div class="ec-row">
+        <button class="ec-btn" id="ec-cancel" type="button">再看看</button>
+        <button class="ec-btn ok" id="ec-ok" type="button">开始</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保卫派对：游戏失败后的独立纯白界面（whale 碰到 granary.png 时显示）
+       纯白底；正中央放 whalegirldancing.gif 动图，右上角 back.png 可点击，
+       点了不保存进度、返回派对选择。请确认 whalegirldancing.gif 与本文件同目录。
+       动图初始不写 src，由 showDefendFailGif() 在界面显示时赋予并从头播放，
+       离开（返回派对选择 / 重新开局）时由 hideDefendFailGif() 清 src 停播。 -->
+  <div id="white-screen-defend-fail">
+    <!-- 正中央动图：等比缩放、不拦截点击，层级低于右上角 back.png -->
+    <div id="def-fail-gif-wrap">
+      <img id="def-fail-gif" alt="">
+    </div>
+    <button id="ws-defend-fail-back" aria-label="返回" type="button">
+      <img src="back.png" alt="返回">
+    </button>
+  </div>
+
+  <!-- 保卫派对：进入前的确认浮层 -->
+  <div id="enter-confirm-defend">
+    <div class="enter-confirm-box">
+      <div class="ec-title">进入 保卫派对</div>
+      <div class="ec-desc">准备好守护阵地、抵御来袭的敌人了吗？<br>出发吧！</div>
+      <div class="ec-row">
+        <button class="ec-btn" id="ec-defend-cancel" type="button">再看看</button>
+        <button class="ec-btn ok" id="ec-defend-ok" type="button">开始</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保卫派对：独立纯白界面
+       新建的独立容器，不复用 #white-screen2。
+       按需求：纯白，左侧放 granary.png，右上角放可交互暂停按钮。
+       暂停按钮点击切换下方 back.png 显隐；点 back.png 先弹“退出本局？”
+       确认浮层，确认后才返回派对选择界面。 -->
+  <div id="white-screen-defend">
+    <!-- 左侧谷仓：贯穿屏高的固体墙，物理层按它的渲染矩形做侧向阻挡，角色不可穿过 -->
+    <img id="ws-defend-granary" src="granary.png" alt="">
+    <!-- 底部贯通地面带：浅灰白底 + 顶部细灰地平线，谷仓与沙袋都坐落其上 -->
+    <div id="ws-defend-ground"></div>
+    <!-- 底部偏左、谷仓右下方的沙袋：已缩小并贴紧地面。
+         DOM 层不响应点击；canvas 物理层按它的渲染矩形做横向阻挡，
+         角色跳起脚底高过袋顶即可从上方越过，也可落在袋顶站住再走下。 -->
+    <img id="ws-defend-sandbag" src="sandbag.png" alt="">
+    <!-- ===== 保卫派对：角色场景画布 =====
+         画九个角色（catgirl / enemy / luni + 5 个普通 whalegirl
+         + 1 个大号 whalegirl）、表演子弹与
+         头顶血条；背景透明，透出底下 DOM 的纯白底、浅灰地面带、
+         granary.png 与 sandbag.png。whalegirl.png 由 canvas 引擎加载，
+         请确认它与本文件同目录。 -->
+    <canvas id="defendCanvas"></canvas>
+
+    <!-- ===== 保卫派对：角色控制 UI（与射击派对同款，独立 id 前缀 def-）===== -->
+    <!-- 左上角播报栏：与射击派对 #kill-feed / .feed-msg 完全同款，
+         本局只播 3 句固定文案（击退 / 又来了 / 超级大号登场），
+         不推送入场提示、伤害 / 击杀数字或其它任何内容。 -->
+    <div id="def-kill-feed"></div>
+
+    <!-- ===== 顶部对决栏：sandbag.png 剩余血条 VS Deep Seek鲸鱼娘剩余可生成数 =====
+         两侧血条框黑色、剩余填充绿色、中间 VS 红色；由 updateDuelBar() 实时刷新。
+         左侧数值随 whale 每次贴袋起跳(无冷却攻击)递减；
+         右侧显示 31/31，每有 1 只 whalegirl.png 被击杀（含大号版）就往下掉 1
+         （3 只 → 28/31），补位生成不回涨，击杀满 31 显示 0/31。 -->
+    <div id="def-duel-bar">
+      <div class="def-duel-side">
+        <span class="def-duel-label">沙袋</span>
+        <div class="def-duel-track"><div id="def-duel-sand-fill" class="def-duel-fill"></div></div>
+        <span id="def-duel-sand-num" class="def-duel-num">1300/1300</span>
+      </div>
+      <span id="def-duel-vs">VS</span>
+      <div class="def-duel-side">
+        <span id="def-duel-whale-label" class="def-duel-label">Deep Seek鲸鱼娘</span>
+        <div id="def-duel-whale-track" class="def-duel-track"><div id="def-duel-whale-fill" class="def-duel-fill"></div></div>
+        <span id="def-duel-whale-num" class="def-duel-num">31/31</span>
+      </div>
+    </div>
+
+    <!-- 左侧虚拟摇杆：控制 catgirl.png -->
+    <div id="def-joystick-zone">
+      <div id="def-joystick-base">
+        <div id="def-joystick-stick"></div>
+      </div>
+    </div>
+
+    <!-- 右侧操作键：跳 / 开火 -->
+    <div id="def-btn-jump">跳</div>
+    <div id="def-btn-shoot">开火</div>
+
+    <!-- ===== 保卫派对：暂停遮罩层 =====
+         复用射击派对 #pause-overlay 的同款样式（整屏压暗 + 居中“暂停”大字），
+         独立一个节点挂在本界面内，避免与射击派对共用节点导致两界面串状态。
+         由下方保卫派对暂停逻辑同步显隐。 -->
+    <div id="defend-pause-overlay">
+      <div class="pause-text">暂停</div>
+    </div>
+    <div id="ws-defend-pause" aria-label="暂停">||</div>
+    <!-- 暂停态下的返回按钮：默认隐藏，点暂停后显示，再点暂停则隐藏 -->
+    <button id="ws-defend-pause-back" aria-label="返回" type="button">
+      <img src="back.png" alt="返回">
+    </button>
+  </div>
+
+  <!-- 三、外壳逻辑：横屏检测 + 开始按钮 -->
+  <script>
+    var gameStarted = false;
+
+    function checkOrientation() {
+      var tip = document.getElementById('rotate-tip');
+      var isPortrait = window.innerHeight > window.innerWidth;
+      var isMobile = Math.min(window.innerWidth, window.innerHeight) < 600;
+      tip.style.display = (isPortrait && isMobile) ? 'flex' : 'none';
+    }
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+    checkOrientation();
+
+    var whiteScreen = document.getElementById('white-screen');
+    var backBtn = document.getElementById('ws-back');
+
+    document.getElementById('startBtn').addEventListener('click', function () {
+      // 隐藏启动界面，显示纯白中间界面
+      document.getElementById('app').style.display = 'none';
+      whiteScreen.classList.add('show');
+
+      // 游戏玩法不运行：不显示游戏容器、不调用 startGame
+      // （game-container 保持 display:none，startGame 不被执行，
+      //  Canvas 主循环、AI、物理、子弹、道具生成等全部不会启动）
+    });
+
+    // 右上角返回按钮：回到启动界面，隐藏纯白中间界面
+    backBtn.addEventListener('click', function () {
+      whiteScreen.classList.remove('show');
+      document.getElementById('app').style.display = 'block';
+    });
+    backBtn.addEventListener('touchend', function (e) {
+      e.preventDefault();
+      whiteScreen.classList.remove('show');
+      document.getElementById('app').style.display = 'block';
+    });
+
+    // 派对选择四个按钮热区：点击后根据 data-mode 分流
+    var optionWrap = document.querySelector('.option-wrap');
+    var whiteScreen2 = document.getElementById('white-screen2');
+    var gameContainer = document.getElementById('game-container');
+    var gameHint = document.getElementById('game-hint');
+    // 注：gameStarted 已在上方声明，此处不再重复声明
+
+    // 进入纯白界面2（空壳占位，保留原行为）
+    function enterWhiteScreen2() {
+      // 重置界面2状态，避免上次进入遗留的 show 类叠加
+      whiteScreen2.classList.remove('show');
+      whiteScreen.classList.remove('show');
+      whiteScreen2.classList.add('show');
+      // 游戏容器保持隐藏，startGame 不被调用
+    }
+
+    // 真正进入"射击派对"玩法：显示游戏容器并启动 startGame
+    // 提取为独立函数，供"确认浮层 → 开始"与直接点击热区共用
+    function doEnterShootParty() {
+      whiteScreen.classList.remove('show');   // 隐藏派对选择
+      whiteScreen2.classList.remove('show');  // 纯白界面2 作为外壳保留，不再独占
+      gameContainer.style.display = 'block';  // 显示游戏画布容器
+      gameHint.style.display = 'block';       // 显示底部操作提示
+      SoundFXClick();                         // 点击音反馈（顺带初始化音频上下文）
+      // 关闭热区调试色块，避免带到游戏画面
+      document.body.classList.remove('show-hot');
+      var dbg = document.getElementById('hot-debug-btn');
+      if (dbg) dbg.classList.remove('on');
+      if (!gameStarted) {
+        startGame(gameContainer);             // 启动游戏引擎（只启动一次）
+        gameStarted = true;
+      }
+      window.scrollTo(0, 0);
+    }
+
+    // 进入前弹出确认浮层：给用户一个"准备好了"的仪式感
+    function enterShootParty() {
+      var confirmBox = document.getElementById('enter-confirm');
+      if (!confirmBox) { doEnterShootParty(); return; }
+      confirmBox.classList.add('show');
+      SoundFXClick();
+    }
+
+    // ========== 保卫派对：进入确认浮层 + 独立纯白界面 ==========
+    // 新建的独立容器 #white-screen-defend，不复用 #white-screen2。
+    // 按需求：纯白、无任何内容、不带返回按钮。
+    var whiteScreenDefend = document.getElementById('white-screen-defend');
+
+    // ---- 失败界面：正中央 whalegirldancing.gif 播放控制 ----------------
+    // 挂到 window 上，供场景闭包(defendFail / resetScene)与外壳联动
+    // (每次进入重开 / 失败界面点 back 返回)共同调用，不受 IIFE 作用域限制。
+    // GIF 是否循环由文件自身的循环标记决定，HTML/CSS 无法改写；
+    // 这里只负责「界面出现时赋 src 从头播」「离开时清 src 停播」。
+    var DEF_FAIL_GIF_SRC = 'whalegirldancing.gif';
+    window.showDefendFailGif = function () {
+      var img = document.getElementById('def-fail-gif');
+      if (!img) return;
+      // 先摘掉 src 让上一轮动画立刻停下，强制一次重排后再赋回真实路径，
+      // 多数浏览器会把它当作全新图片重新解码 → 每次进入失败界面都从头播放。
+      img.removeAttribute('src');
+      void img.offsetWidth;
+      img.style.visibility = 'visible';
+      img.setAttribute('src', DEF_FAIL_GIF_SRC);
+    };
+    window.hideDefendFailGif = function () {
+      var img = document.getElementById('def-fail-gif');
+      if (!img) return;
+      img.removeAttribute('src');        // 停播并释放解码帧，不留后台动画
+      img.style.visibility = 'hidden';   // 清 src 后不显示破图占位
+    };
+
+    // 真正进入保卫派对：显示独立纯白界面
+    function doEnterDefendParty() {
+      whiteScreen.classList.remove('show');        // 隐藏派对选择
+      whiteScreen2.classList.remove('show');       // 确保纯白界面2 不残留
+      whiteScreenDefend.classList.add('show');     // 显示保卫派对独立纯白界面
+      SoundFXClick();
+      // 复位暂停态：保证每次进入时 back.png 默认隐藏、暂停按钮回到未暂停外观
+      resetDefendPauseState();
+      // 关闭热区调试色块，避免带到白屏
+      document.body.classList.remove('show-hot');
+      var dbg = document.getElementById('hot-debug-btn');
+      if (dbg) dbg.classList.remove('on');
+      window.scrollTo(0, 0);
+    }
+
+    // ========== 保卫派对：返回派对选择前的“退出本局？”确认 ==========
+    // 点 back.png 不直接返回，而是先弹通用退出确认浮层。
+    // “继续玩”只关浮层、不收起 back.png、不清暂停态（保留当前状态）；
+    // “退出”才真正返回派对选择界面，并复位暂停态，下次进入干净。
+    var exitConfirm = document.getElementById('exit-confirm');
+    var exitCancel = document.getElementById('exit-cancel');
+    var exitOk = document.getElementById('exit-ok');
+    var defendPaused = false;   // 记录当前是否处于暂停态
+
+    // 复位暂停态：隐藏 back.png，并把暂停按钮外观恢复为未暂停
+    function resetDefendPauseState() {
+      defendPaused = false;
+      var backBtnDefend = document.getElementById('ws-defend-pause-back');
+      var pauseBtn = document.getElementById('ws-defend-pause');
+      // 同步复位：遮罩、back.png、按钮外观三者保持一致
+      var defendOverlay = document.getElementById('defend-pause-overlay');
+      if (defendOverlay) defendOverlay.classList.remove('show');
+      if (backBtnDefend) backBtnDefend.classList.remove('show');
+      if (pauseBtn) {
+        pauseBtn.style.backgroundColor = 'rgba(0, 0, 0, 0.1)';
+        pauseBtn.style.color = '#333';
+      }
+    }
+
+    // 打开退出确认浮层
+    function openExitConfirm() {
+      if (!exitConfirm) return;
+      exitConfirm.classList.add('show');
+      SoundFXClick();
+    }
+
+    // 关闭退出确认浮层（仅关浮层，保留暂停态与 back.png 显隐）
+    function closeExitConfirm() {
+      if (!exitConfirm) return;
+      exitConfirm.classList.remove('show');
+    }
+
+    // 真正执行返回：隐藏保卫派对白屏，显示派对选择界面，并复位暂停态
+    function confirmExitToPartySelect() {
+      closeExitConfirm();
+      resetDefendPauseState();
+      whiteScreenDefend.classList.remove('show');
+      whiteScreen.classList.add('show');
+      SoundFXClick();
+      window.scrollTo(0, 0);
+    }
+
+    // 进入前弹出确认浮层：给用户一个"准备好了"的仪式感
+    function enterDefendParty() {
+      var confirmBox = document.getElementById('enter-confirm-defend');
+      if (!confirmBox) { doEnterDefendParty(); return; }
+      confirmBox.classList.add('show');
+      SoundFXClick();
+    }
+
+    // 派对选择界面按下热区时，给一个轻量触觉/视觉反馈
+    function pulseHot(hot) {
+      if (!hot) return;
+      var prev = hot.style.backgroundColor;
+      hot.style.transition = 'background-color 0.08s';
+      hot.style.backgroundColor = 'rgba(255, 235, 59, 0.55)';
+      // 若设备支持震动，给一次短震
+      if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+      setTimeout(function () { hot.style.backgroundColor = prev || ''; }, 120);
+    }
+
+    // 一个轻量的点击音，用于在进入游戏时初始化 Web Audio（浏览器要求用户手势后才能出声）
+    function SoundFXClick() {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        var ctx = new AC();
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.15);
+      } catch (e) { /* 忽略音频初始化失败 */ }
+    }
+
+    // 派对选择四个按钮热区：点击后根据 data-mode 分流
+    // 优化点：把热区坐标整体下移并对齐按钮文字；点中时给出视觉反馈；
+    // 射击派对、保卫派对走"确认浮层 → 开始"，其余模式暂未实现只打日志。
+    optionWrap.addEventListener('click', function (e) {
+      var hot = e.target.closest && e.target.closest('.hot');
+      if (!hot) return;
+      var mode = hot.getAttribute('data-mode');
+      if (mode === 'shoot') {
+        pulseHot(hot);                        // 命中反馈（高亮 + 短震）
+        enterShootParty();                    // 射击派对 → 弹出确认浮层
+      } else if (mode === 'defend') {
+        pulseHot(hot);                        // 命中反馈（高亮 + 短震）
+        enterDefendParty();                   // 保卫派对 → 弹出确认浮层
+      } else {
+        pulseHot(hot);                        // 命中反馈（高亮 + 短震）
+        // 其他模式暂未实现，仅提示，停留在派对选择界面
+        console.log('暂未实现：' + hot.getAttribute('title'));
+      }
+    });
+    optionWrap.addEventListener('touchend', function (e) {
+      var hot = e.target.closest && e.target.closest('.hot');
+      if (hot) {
+        e.preventDefault();
+        var mode = hot.getAttribute('data-mode');
+        if (mode === 'shoot') {
+          pulseHot(hot);
+          enterShootParty();                  // 射击派对 → 弹出确认浮层
+        } else if (mode === 'defend') {
+          pulseHot(hot);
+          enterDefendParty();                // 保卫派对 → 弹出确认浮层
+        } else {
+          pulseHot(hot);
+          console.log('暂未实现：' + hot.getAttribute('title'));
+        }
+      }
+    });
+
+    // 纯白界面2 的返回按钮：回到派对选择界面，并退出游戏玩法
+    var ws2Back = document.getElementById('ws2-back');
+    function backToPartySelect() {
+      // 完整退出本局：停掉引擎、清空局内状态、再切回派对选择界面。
+      // 这是修复“返回后游戏仍在后台运行”的核心入口。
+      exitGame();
+    }
+    ws2Back.addEventListener('click', backToPartySelect);
+    ws2Back.addEventListener('touchend', function (e) {
+      e.preventDefault();
+      backToPartySelect();
+    });
+
+    // ---------- 热区可视化调试开关 ----------
+    // 用法：在派对选择界面点左上角"热区调试"按钮，按钮变黄即已开启，
+    // 四个热区会以半透明色块叠加显示，方便你肉眼核对是否盖住按钮文字。
+    // 再次点击关闭。正式上线时可整段删除（连同对应 CSS 与 DOM）。
+    (function () {
+      var dbg = document.getElementById('hot-debug-btn');
+      if (!dbg) return;
+      function toggle() {
+        var on = document.body.classList.toggle('show-hot');
+        dbg.classList.toggle('on', on);
+        dbg.textContent = on ? '热区调试：开（点击关闭）' : '热区调试：关';
+        SoundFXClick();
+      }
+      dbg.addEventListener('click', function (e) { e.stopPropagation(); toggle(); });
+      dbg.addEventListener('touchend', function (e) {
+        e.preventDefault(); e.stopPropagation(); toggle();
+      });
+    })();
+
+    // ---------- 进入确认浮层逻辑 ----------
+    // 点"开始"→ 正式进入；点"再看看"/浮层背景 → 关闭浮层，留在派对选择。
+    (function () {
+      var confirmBox = document.getElementById('enter-confirm');
+      var btnOk = document.getElementById('ec-ok');
+      var btnCancel = document.getElementById('ec-cancel');
+      if (!confirmBox || !btnOk || !btnCancel) return;
+
+      function closeConfirm() { confirmBox.classList.remove('show'); }
+
+      btnOk.addEventListener('click', function () {
+        closeConfirm(); doEnterShootParty();   // 正式进入射击派对
+      });
+      btnOk.addEventListener('touchend', function (e) {
+        e.preventDefault(); closeConfirm(); doEnterShootParty();
+      });
+      btnCancel.addEventListener('click', function () { closeConfirm(); SoundFXClick(); });
+      btnCancel.addEventListener('touchend', function (e) {
+        e.preventDefault(); closeConfirm(); SoundFXClick();
+      });
+      // 点击浮层半透明背景也可关闭
+      confirmBox.addEventListener('click', function (e) {
+        if (e.target === confirmBox) closeConfirm();
+      });
+    })();
+
+    // ---------- 保卫派对：进入确认浮层逻辑 ----------
+    // 点"开始"→ 正式进入独立纯白界面；点"再看看"/浮层背景 → 关闭浮层，留在派对选择。
+    (function () {
+      var confirmBox = document.getElementById('enter-confirm-defend');
+      var btnOk = document.getElementById('ec-defend-ok');
+      var btnCancel = document.getElementById('ec-defend-cancel');
+      if (!confirmBox || !btnOk || !btnCancel) return;
+
+      function closeConfirm() { confirmBox.classList.remove('show'); }
+
+      btnOk.addEventListener('click', function () {
+        closeConfirm(); doEnterDefendParty();   // 正式进入保卫派对（独立纯白界面）
+      });
+      btnOk.addEventListener('touchend', function (e) {
+        e.preventDefault(); closeConfirm(); doEnterDefendParty();
+      });
+      btnCancel.addEventListener('click', function () { closeConfirm(); SoundFXClick(); });
+      btnCancel.addEventListener('touchend', function (e) {
+        e.preventDefault(); closeConfirm(); SoundFXClick();
+      });
+      // 点击浮层半透明背景也可关闭
+      confirmBox.addEventListener('click', function (e) {
+        if (e.target === confirmBox) closeConfirm();
+      });
+    })();
+
+    // ---------- 保卫派对：暂停按钮 + back.png 返回按钮逻辑 ----------
+    // 暂停按钮：点击切换暂停态，控制下方 back.png 的显隐（再次点击则隐藏）。
+    // back.png：点击不直接返回，而是先弹“退出本局？”确认浮层；
+    // “继续玩”只关浮层、保留暂停态与 back.png 显隐；
+    // “退出”才真正返回派对选择界面并复位暂停态。
+    (function () {
+      var defendScreen = document.getElementById('white-screen-defend');
+      var pauseBtn = document.getElementById('ws-defend-pause');
+      var backBtnDefend = document.getElementById('ws-defend-pause-back');
+      // 保卫派对独立暂停遮罩节点（复用射击派对同款样式）
+      var defendOverlay = document.getElementById('defend-pause-overlay');
+      if (!defendScreen || !pauseBtn || !backBtnDefend) return;
+
+      // 暂停按钮点击：切换暂停态（同步按钮外观 + 遮罩 + back.png 显隐）
+      function togglePause() {
+        defendPaused = !defendPaused;
+        if (defendPaused) {
+          // 进入暂停态：显示同款压暗遮罩与“暂停”大字，显示 back.png，按钮加深
+          if (defendOverlay) defendOverlay.classList.add('show');
+          backBtnDefend.classList.add('show');
+          pauseBtn.style.backgroundColor = 'rgba(0, 0, 0, 0.35)';
+          pauseBtn.style.color = '#000';
+        } else {
+          // 退出暂停态：遮罩、back.png 一并收起，按钮恢复未暂停外观
+          if (defendOverlay) defendOverlay.classList.remove('show');
+          backBtnDefend.classList.remove('show');
+          pauseBtn.style.backgroundColor = 'rgba(0, 0, 0, 0.1)';
+          pauseBtn.style.color = '#333';
+        }
+        SoundFXClick();
+      }
+      pauseBtn.addEventListener('click', togglePause);
+      pauseBtn.addEventListener('touchend', function (e) {
+        e.preventDefault();
+        togglePause();
+      });
+
+      // back.png 点击：先弹“退出本局？”确认浮层，不直接返回
+      function onBackClick() {
+        openExitConfirm();
+      }
+      backBtnDefend.addEventListener('click', onBackClick);
+      backBtnDefend.addEventListener('touchend', function (e) {
+        e.preventDefault();
+        onBackClick();
+      });
+
+      // 进入保卫派对时，确保 back.png 默认隐藏、暂停态复位
+      var _origDoEnter = doEnterDefendParty;
+      doEnterDefendParty = function () {
+        resetDefendPauseState();
+        _origDoEnter();
+      };
+    })();
+
+    // ---------- 保卫派对：退出确认浮层交互 ----------
+    // “继续玩”：只关闭浮层，不收起 back.png，也不清暂停态，停留在当前白屏。
+    // “退出”：真正返回派对选择界面，并复位暂停态。
+    (function () {
+      if (!exitConfirm || !exitCancel || !exitOk) return;
+
+      // 点“继续玩”：关闭浮层，保留暂停态与 back.png 显隐
+      function onCancel() {
+        closeExitConfirm();
+        SoundFXClick();
+      }
+      exitCancel.addEventListener('click', onCancel);
+      exitCancel.addEventListener('touchend', function (e) {
+        e.preventDefault();
+        onCancel();
+      });
+
+      // 点“退出”：真正返回派对选择界面
+      function onConfirm() {
+        confirmExitToPartySelect();
+      }
+      exitOk.addEventListener('click', onConfirm);
+      exitOk.addEventListener('touchend', function (e) {
+        e.preventDefault();
+        onConfirm();
+      });
+
+      // 点击半透明背景也视为“继续玩”（不退出、保留当前状态）
+      exitConfirm.addEventListener('click', function (e) {
+        if (e.target === exitConfirm) {
+          closeExitConfirm();
+          SoundFXClick();
+        }
+      });
+    })();
+
+    // ============================================================
+    // 保卫派对：独立轻量场景引擎
+    //  · 九个角色：catgirl.png(玩家) / enemy.png(AI) / luni.png(AI)
+    //            + 5 个普通 whalegirl.png(安静型 AI，只走动 + 跳跃、不开火)
+    //            + 1 个大号 whalegirl.png(本局仅生成一次，见【大号 whale】)。
+    //  · 与射击派对 startGame() 完全独立：独立 canvas、独立 rAF、独立状态，
+    //    不复用 #game-container 的任何 DOM / 事件 / 变量，互不串状态。
+    //  · 硬约束：不显示计分榜、不推送击杀 / 伤害播报；子弹只对存活的
+    //    whalegirl 结算命中，三角色之间仍零伤害、掉血只发生在 whale 身上。
+    //  · AI（enemy / luni）做移动、跳跃与自动攻击 whalegirl；普通 whale 为
+    //    "左行冲锋型"：以原有 AI 速度(SPEED*0.6)【恒定朝左】走向 granary.png、
+    //    绝不回头，安静不开火、不产生子弹与枪声，起跳带同款跳跃音。
+    //  · whalegirl(blockBag) 对 sandbag.png 完全不可通过：不判 overBag、
+    //    不吸附袋顶，沙袋按「贯穿屏高的隐形墙」处理，跳多高都过不去、穿不过。
+    //    撞上沙袋后：仍每帧按原速度持续尝试向左（physics 只在贴边瞬间把 vx
+    //    清零、下一帧 aiUpdate 立刻恢复 -SPEED*0.6），并且【一落地就立刻再跳】，
+    //    于是看起来就是"在沙袋旁边原地不停跳跃"，绝不向右回头移动。
+    //    catgirl / enemy / luni 对 sandbag.png 仍是「可跳过、可落袋顶」的
+    //    矮障碍（enemy / luni 另新增贴袋自动起跳试图越过）。
+    //  · whalegirl 具备【连续、无冷却】破坏 sandbag.png 的能力：贴袋每次
+    //    「落地即跳」都立刻扣 1 点沙袋血量，不去重、不设窗口、不清零；
+    //    累计到 SANDBAG_HITS_REQUIRED(1300) 点时【瞬间破坏】——隐藏贴图 +
+    //    移除碰撞体，whale 不再被挡、继续恒左走向谷仓。攻击音复用 hit()。
+    //    【大号 whale 不能跳】→ 永远不会触发这一跳，也就永远不扣沙袋血。
+    //  · 【战斗体系】三角色 + 5 只普通 whale 满血统一 ENTITY_MAX_HP(100)；
+    //    大号 whale 血量翻倍(200)。头顶血条一律按 hp / maxHp 绘制。
+    //    · 子弹命中判定【只把存活的 whalegirl 当目标】：三角色子弹都能打
+    //      掉 whale 的血（含大号），三角色之间仍零伤害；每发扣 BULLET_DAMAGE(1)、
+    //      命中即销毁、播 hit() 音效；whale 绝不反击（不调用 fire()）。
+    //    · enemy / luni 自动攻击：每帧锁定"最近的存活 whale"，子弹朝目标
+    //      飞、按 FIRE_CD 持续开火；【开火同时把 facingRight/枪口对准目标】
+    //      （aiming 标记让 drawEnt 优先用瞄准朝向而非移动方向翻转）。
+    //      同时保留随机跳跃 + 「贴到 sandbag 即自动起跳试图越过」。
+    //  · 【总额度 / 补位】WHALE_KILL_LIMIT = 31（对决栏右侧分母）。
+    //    普通 whale 对象恒 5 个、场上存活数 <=5；前 25 次普通 whale 被击杀
+    //    由 respawnWhale 同帧在最右侧补生成（保持 5 只）；
+    //    第 25 次击杀起进入「本对局最后 5 个正常大小 whale」阶段、不再补位。
+    //  · 【大号 whale】whalegirl.png 大号版，本局【只生成一次】：
+    //    · 触发：累计击杀数达到 BIG_WHALE_TRIGGER(25) 且有普通 whale 被击杀
+    //      的同一帧，由 spawnBigWhale() 在画面最右侧生成；是【额外的第 6 个
+    //      个体】，不占「同时最多 5 只普通 whale」上限，此后不再生成。
+    //    · 属性：BIG_WHALE_SCALE(1.8) 倍宽高、血量 200(普通 100 的翻倍)、
+    //      【不能跳】(aiUpdate 跳过全部起跳分支)、恒左冲锋、绝不回头、
+    //      安静不开火、对三角色零伤害、blockBag 隐形墙照常挡它。
+    //    · 被击杀：直接消失且【不补位】，但同样 whaleKillCount+1 →
+    //      对决栏 31/31 往下掉 1；碰到 granary.png 同样判定游戏失败。
+    //  · 左上角播报栏与射击派对 #kill-feed / .feed-msg 同款，本局【只播 3 句】：
+    //    「击退了1只Deep Seek鲸鱼娘」/「又来了了1只Deep Seek鲸鱼娘」/
+    //    「超级Deep Seek鲸鱼娘登场,」，分别由击杀 / 补位 / 大号登场触发；
+    //    入场提示、伤害、沙袋掉血、跳跃、失败等一律不播报。
+    //  · 顶部对决栏 #def-duel-bar：左侧沙袋剩余血条 VS 右侧
+    //    「Deep Seek鲸鱼娘」剩余额度。右侧口径 = 31 - whaleKillCount，
+    //    分母固定 WHALE_KILL_LIMIT(31)：初值 31/31，每击杀 1 只往下掉 1
+    //    （3 只 → 28/31，含大号被击杀），补位生成不回涨，击杀满 31 → 0/31。
+    //    黑框 + 绿填充(#32CD32) + 红 VS(#ff3333)；updateDuelBar() 在沙袋受击 /
+    //    破坏 / whale 阵亡与补位 / 大号生成 / 复位时实时刷新。
+    //  · 【失败】任意存活 whale（含大号）碰到 granary.png → defendFail()：
+    //    停 rAF 循环、游戏停止运行、显示独立纯白失败界面：正中央
+    //    whalegirldancing.gif 动图从头播放，右上角可交互 back.png。
+    //    点该 back.png → 不保存进度、返回派对选择界面；
+    //    每次从派对选择点「保卫派对」进入都走 startDefendScene→resetScene，
+    //    全量复位（沙袋 1300 / 普通 whale 复活 / 大号未生成 / 击杀数 0 /
+    //    血量满 / 失败态清除），即【每次进入都是全新一局】。
+    //  · 九个实体共用同一套物理 / 障碍碰撞 / 朝向翻转 / 血条绘制。
+    //  · 暂停：复用全局 defendPaused 冻结物理与输入；退出时停循环并复位。
+    // ============================================================
+    (function () {
+      var cv = document.getElementById('defendCanvas');
+      if (!cv) return;
+      var cx = cv.getContext('2d');
+
+      // ---- 常量：观感对齐射击派对，地面高度对齐 DOM 的 9vh 地面带 ----
+      var GRAVITY      = 0.8;
+      var JUMP         = -20;
+      var SPEED        = 5;
+      var BULLET_SPEED = 12;
+      var FIRE_CD      = 200;
+      var GROUND_RATIO = 0.09;     // 与 #ws-defend-ground 的 height:9vh 一致
+      var CHAR_H_RATIO = 0.28;     // 与射击派对 targetHeight 一致
+      var MAX_DIST     = 35;
+      // granary.png 右侧有大片非墙体的背景留白，只按可见墙体主体宽度做阻挡：
+      // 既贴合画面，也避免「墙右缘 ~ 沙袋左缘」间距小于角色立绘宽度时
+      // 把角色夹在两障碍之间卡死（横屏下收紧后间距才放得下一个角色）。
+      var GRANARY_SOLID_RATIO = 0.60;
+      // 血条填充色：与射击派对 drawEntity() 里 ctx.fillStyle = '#32CD32' 完全同款。
+      // 三角色统一用这一条绿；血条「框」(描边)仍用各自 e.color，互不影响。
+      var DEF_HP_FILL = '#32CD32';
+
+      // ---- sandbag.png 破坏机制（whalegirl 专属，连续 / 无冷却）----
+      // SANDBAG_HITS_REQUIRED 现在就是沙袋的【总血量】：每只 whale 每次贴袋
+      // 起跳直接扣 1 点，不去重、不设窗口、不清零、无冷却，扣满即瞬间破坏。
+      // 本次按需求把血量从 1400 下调到 1300（对决栏左侧同步 1300/1300）。
+      // 1300 是 300 血的 13/3 倍、1200 血的 13/12 倍、1400 血的 13/14：单只 whale
+      // 需连跳 1300 次，5 只同时跳约 260 次跳跃才能打破，仿真约 2860 帧
+      //（约 47.7 秒 @60fps，随帧率与玩家是否开火浮动）；比 1400 血快约 7.1%，
+      // 打破前 whale 一直在袋旁原地跳、不碰谷仓，失败结局相应提前约 3.7 秒。
+      // 破坏规则本身一字未改（连续 / 无冷却 / 不清零）。
+      // 若嫌太慢，可调 BULLET_DAMAGE 或本常量，其余逻辑无需改动。
+      // 本轮为纯数值增量：只改总血量与全部同步文案，未触碰任何玩法逻辑、
+      // 碰撞判定、补位机制、大号 whale 机制、左上角播报栏（仍只播 3 句）、
+      // 失败流程、对决栏样式与射击派对代码。
+      // 注意：AI 随机计时器 Math.random()*1400 为 1400ms 间隔，与本血量无关，保持原样不动。
+      var SANDBAG_HITS_REQUIRED = 1300; // 沙袋总血量（原 1400 的 13/14）
+
+      // ---- whalegirl 总额度 / 大号 whale 参数 ----
+      // 总额度 31（对决栏右侧分母）：前 25 次普通 whale 击杀补位 +
+      // 最后 5 只普通 whale + 唯一 1 只大号 whale，31 = 25 + 5 + 1。
+      // 大号被击杀同样计入 whaleKillCount，所以右侧 31/31 也会往下掉。
+      var WHALE_KILL_LIMIT     = 31;   // 对决栏右侧分母 / 本局总击杀额度
+      var NORMAL_RESPAWN_UNTIL = 25;   // 普通 whale 补位截止击杀数（含第 25 次）
+      var BIG_WHALE_TRIGGER    = 25;   // 触发唯一一只大号 whale 的累计击杀数
+      var BIG_WHALE_SCALE      = 1.8;  // 大号体型倍数（宽高同倍放大）
+      var BIG_WHALE_HP_MULT    = 2;    // 大号血量倍数（100 → 200）
+
+      // ---- 角色血量 / 子弹伤害（战斗体系）----
+      // 三角色 + 5 只普通 whale 共用同一满血值 100；
+      // 大号 whale 创建后按 BIG_WHALE_HP_MULT 翻倍为 200。
+      // 头顶血条一律按 hp / maxHp 绘制，whale 受击时真实收缩。
+      var ENTITY_MAX_HP = 100;
+      // 每发子弹对 whale 造成的伤害：取 1 点，与「whale 每次起跳扣沙袋
+      // 1 点血」同量级，保证对决栏两侧都能完整走完收缩过程，不出现某一边
+      // 瞬间归零。100 血 ÷ 1 = 100 发击倒一只；数值可按手感调整。
+      var BULLET_DAMAGE = 1;
+
+      // ---- 状态 ----
+      var running = false;
+      var rafId = 0;
+      var lastT = 0;
+      var bullets = [];
+      var joystickX = 0;
+      var wantShoot = false;
+      var lastPlayerFire = 0;
+      var joyTouchId = null;
+      var joyStartX = null;
+      var entities = [];
+      // 沙袋破坏状态：sandbagHits = 已累计造成的伤害（剩余血量 =
+      // SANDBAG_HITS_REQUIRED - sandbagHits）；sandbagBroken = 是否已被破坏。
+      // 二者由 registerSandbagHit / breakSandbag / resetScene 维护。
+      var sandbagHits   = 0;
+      var sandbagBroken = false;
+      var whaleTotal    = 0;   // 普通 whale 对象数(恒 5)；对决栏右侧分母现用 WHALE_KILL_LIMIT
+      var whaleKillCount = 0;  // 本局累计被击杀的 whalegirl 数（普通 + 大号都计入，满 31 为 0/31）
+      var bigWhaleSpawned = false; // 大号 whale 本局是否已生成过（只允许一次）
+      var defendFailed  = false; // whale 碰到 granary.png → 失败，循环停止
+
+
+      // ---- 场景障碍物（granary.png / sandbag.png）的碰撞矩形 ----
+      // 两张图与角色画布同处 #white-screen-defend 内，坐标系都是视口坐标，
+      // 因此直接取 DOM 实际渲染矩形即可与 canvas 绘制坐标一一对齐。
+      // 图片异步加载 / 窗口 resize / 旋转屏幕 / 重开本局后都会重新测量。
+      var obstacles = { granary: null, sandbag: null };
+
+      function rectOf(el) {
+        if (!el) return null;
+        var r = el.getBoundingClientRect();
+        return {
+          left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+          width: r.width, height: r.height
+        };
+      }
+
+      // 图片尚未加载出固有尺寸时，用素材真实像素比 + CSS 定位公式兜底，
+      // 保证开局第一帧就有碰撞体；图片加载完成后立即改用真实渲染矩形。
+      function fallbackRects() {
+        var W = window.innerWidth, H = window.innerHeight;
+        var g = obstacles.granary;
+        if (!g || g.width < 1) {
+          var gw = H * (714 / 2048) * GRANARY_SOLID_RATIO;  // granary.png 714x2048，按可见墙体收紧
+          obstacles.granary = { left: 0, top: 0, right: gw, bottom: H, width: gw, height: H };
+        }
+        // 沙袋已被破坏：绝不再用公式兜底重建碰撞体，否则隐藏贴图后
+        // 物理层仍会凭空出现一堵隐形墙，破坏效果失效。
+        if (sandbagBroken) { obstacles.sandbag = null; return; }
+        var sb = obstacles.sandbag;
+        if (!sb || sb.width < 1) {
+          var sh = H * 0.13;                    // height:13vh
+          var sw = Math.min(sh * (1152 / 613), W * 0.22);  // width:auto + max-width:22vw
+          var sl = W * 0.22;                   // left:22vw
+          var st = H - H * 0.075 - sh;         // bottom:7.5vh
+          obstacles.sandbag = { left: sl, top: st, right: sl + sw, bottom: st + sh, width: sw, height: sh };
+        }
+      }
+
+      function measureObstacles() {
+        var g = rectOf(document.getElementById('ws-defend-granary'));
+        // 沙袋已被连续攻击打空血条而破坏：不再读取它的 DOM 渲染矩形，
+        // 碰撞体保持 null；谷仓仍照常测量（只是谷仓，不是沙袋）。
+        obstacles.sandbag = sandbagBroken
+          ? null
+          : rectOf(document.getElementById('ws-defend-sandbag'));
+        // 谷仓按可见墙体主体收紧：图片右侧留白 / 背景区不算固体墙
+        if (g && g.width > 0) {
+          var gw = g.width * GRANARY_SOLID_RATIO;
+          g = { left: g.left, top: g.top, right: g.left + gw,
+                bottom: g.bottom, width: gw, height: g.height };
+        }
+        obstacles.granary = g;
+        fallbackRects();
+      }
+      function obsValid() {
+        // 沙袋已被破坏时，碰撞体只剩谷仓，这是合法终态；
+        // 否则 physics 会因 sandbag===null 每帧重测（虽不重建，但无意义）。
+        return !!(obstacles.granary && obstacles.granary.width > 0 &&
+                  (sandbagBroken ||
+                   (obstacles.sandbag && obstacles.sandbag.width > 0)));
+      }
+      // 两张场景图 load 后立刻用真实尺寸刷新碰撞体（缓存命中也会走这里）
+      ['ws-defend-granary', 'ws-defend-sandbag'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('load', measureObstacles);
+        if (el.complete && el.naturalWidth > 0) measureObstacles();
+      });
+
+      // 角色定义：isPlayer 决定谁受摇杆 / 跳 / 开火控制。
+      // quiet=true 的 AI 是"安静型"：能左右移动、能跳、跳跃带同款音效，
+      //   但完全不调用 fire()、不产生任何子弹与枪声（对三角色零伤害）。
+      // blockBag=true 的 AI 把 sandbag.png 当作「贯穿屏高的隐形墙」：
+      //   无论跳多高、从哪一侧都绝对无法跳过或穿过，也不落在袋顶；
+      //   bagSide 在 resetScene 里按初始站位锁定，贴边解算不会假穿越。
+      // chargeLeft=true 的 AI（5 只 whale）为"左行冲锋型"：aiDir 恒 -1、
+      //   恒以 SPEED*0.6 朝 granary.png 走、绝不回头；撞上沙袋后一落地就再跳，
+      //   配合 blockBag 隐形墙形成"贴着沙袋原地不停跳"的观感。
+      // 原有 catgirl / enemy / luni 不传这些参数（默认 false/null），
+      //   随机 AI 与「可跳越、可落顶」的矮障碍行为完全不变。
+      function mkEnt(id, name, color, src, xRatio, isPlayer, quiet, blockBag, chargeLeft) {
+        return {
+          id: id, name: name, color: color, isPlayer: isPlayer,
+          quiet: !!quiet, blockBag: !!blockBag, bagSide: null,
+          chargeLeft: !!chargeLeft,
+          isBig: false,         // 大号版 whalegirl 标记（创建后由外部置 true）
+          scale: 1,             // 体型倍数：普通 1，大号 BIG_WHALE_SCALE(1.8)
+          src: src, xRatio: xRatio,
+          x: 0, y: 0, vx: 0, vy: 0, w: 0, h: 0,
+          grounded: true, facingRight: true,
+          hp: ENTITY_MAX_HP, maxHp: ENTITY_MAX_HP,  // 默认 100；大号创建后翻倍为 200
+          img: new Image(),
+          aiTimer: 0, aiDir: 0, nextFire: 0,
+          alive: true,          // false = 血量归零、直接消失、可触发补位
+          aimRight: null,       // enemy/luni 自动攻击目标方向(null=按自身朝向开火)
+          aiming: false         // 攻击中：立绘/枪口优先朝目标，而非按移动方向翻转
+        };
+      }
+      entities = [
+        mkEnt('player', '蓝莓喵', '#00bfff', 'catgirl.png', 0.50, true),
+        mkEnt('enemy',  '青苹果', '#32CD32', 'enemy.png',   0.30, false),
+        mkEnt('luni',   '红草莓', '#ff3333', 'luni.png',    0.72, false),
+        // whalegirl.png（1418x1830）共 5 只，属性完全一致：
+        // 安静型 AI：不开火、不放枪声、不产生子弹；起跳播同款跳跃音。
+        // 浅蓝青 #4FC3F7 作主题色（血条框色），与 catgirl 深蓝区分。
+        // 第 8 参 blockBag=true：对 sandbag.png 完全不可跳过 / 穿过 / 站顶。
+        // 第 9 参 chargeLeft=true：自动按原有速度(SPEED*0.6)恒定朝左走向
+        //   granary.png、绝不回头；撞到沙袋后一边继续向左顶、一边落地即跳，
+        //   看起来像在沙袋旁原地不停跳跃。5 只在画面右侧按 x 比例错开
+        //   （0.60 / 0.68 / 0.78 / 0.84 / 0.90），右边界由 layout()/physics()
+        //   自动 clamp，不会出屏。请确认 whalegirl.png 与本文件同目录。
+        mkEnt('whale1', '鲸歌1', '#4FC3F7', 'whalegirl.png', 0.60, false, true, true, true),
+        mkEnt('whale2', '鲸歌2', '#4FC3F7', 'whalegirl.png', 0.78, false, true, true, true),
+        mkEnt('whale3', '鲸歌3', '#4FC3F7', 'whalegirl.png', 0.90, false, true, true, true),
+        mkEnt('whale4', '鲸歌4', '#4FC3F7', 'whalegirl.png', 0.68, false, true, true, true),
+        mkEnt('whale5', '鲸歌5', '#4FC3F7', 'whalegirl.png', 0.84, false, true, true, true)
+      ];
+      // ---- 大号版 whalegirl.png（本局只生成一次，见 spawnBigWhale）----
+      // 复用 mkEnt 建一个额外的第 6 个 whalegirl 实体，但不进上面的初始数组：
+      // alive=false 表示"尚未入场"，绘制 / 物理 / AI 三层都会跳过它，
+      // 直到累计击杀数达到 BIG_WHALE_TRIGGER 才由 spawnBigWhale() 放到最右侧。
+      // 它同样 chargeLeft + quiet + blockBag：恒左冲锋、绝不回头、安静不开火、
+      // 被沙袋隐形墙挡住；区别只有 isBig / scale / 血量 / 不能跳 / 不补位。
+      var bigWhale = mkEnt('whaleBig', '鲸歌·大', '#4FC3F7', 'whalegirl.png',
+                           0.95, false, true, true, true);
+      bigWhale.isBig  = true;
+      bigWhale.scale  = BIG_WHALE_SCALE;
+      bigWhale.maxHp  = ENTITY_MAX_HP * BIG_WHALE_HP_MULT;   // 200，血量翻倍
+      bigWhale.hp     = bigWhale.maxHp;
+      bigWhale.alive  = false;                                // 初始不入场
+      entities.push(bigWhale);
+      // 先绑事件再赋 src，避免缓存命中时错过 onload；失败时画占位色块
+      entities.forEach(function (e) {
+        e.img.onload  = function () { if (running) layout(); };
+        e.img.onerror = function () { console.warn('保卫派对图片未找到：' + e.src); };
+        e.img.src = e.src;
+      });
+      // 场上同时存在的【普通】whale 对象数（恒 5，补位复用对象）；
+      // 大号 whale(isBig) 是额外个体，不计入这 5 个槽位。
+      // 对决栏右侧分母现改为 WHALE_KILL_LIMIT(31)，不再使用本变量做分母。
+      whaleTotal = entities.filter(function (w) { return w.chargeLeft && !w.isBig; }).length;
+
+      function groundPx() { return window.innerHeight * GROUND_RATIO; }
+      function floorY()   { return window.innerHeight - groundPx(); }
+      function imgOK(e)   { return e.img.complete && e.img.naturalHeight > 0; }
+
+      function resize() {
+        cv.width = window.innerWidth;
+        cv.height = window.innerHeight;
+        layout();
+      }
+      function layout() {
+        measureObstacles();   // 窗口尺寸 / 图片尺寸变化后，碰撞体跟着一起重算
+        entities.forEach(function (e) {
+          // 大号 whale 按 BIG_WHALE_SCALE(1.8) 放大：h 与 w 都从同一个 h 推导，
+          // drawEnt 里的 realW 校正同样用 e.h，因此不会反复校正 / 拉伸变形。
+          var h = window.innerHeight * CHAR_H_RATIO * (e.scale || 1);
+          e.h = h;
+          e.w = imgOK(e) ? e.img.naturalWidth * (h / e.img.naturalHeight) : h * 0.6;
+          if (e.x === 0) e.x = window.innerWidth * e.xRatio;
+          e.y = floorY() - e.h;
+          if (e.x + e.w > window.innerWidth) e.x = window.innerWidth - e.w;
+          if (e.x < 0) e.x = 0;
+        });
+      }
+      window.addEventListener('resize', function () { if (running) resize(); });
+
+      // ---- 播报栏：与射击派对 #kill-feed / .feed-msg 同款，只播 3 句固定文案 ----
+      // 三条文案逐字按需求写定（含第二条"了了"与第三条结尾逗号），除此之外
+      // 本局不产生任何播报：入场提示、沙袋掉血、子弹命中、跳跃、失败一律不推。
+      var DEF_FEED_KILL    = '击退了1只Deep Seek鲸鱼娘';
+      var DEF_FEED_RESPAWN = '又来了了1只Deep Seek鲸鱼娘';
+      var DEF_FEED_BIG     = '超级Deep Seek鲸鱼娘登场,';
+      var feed = document.getElementById('def-kill-feed');
+      function pushFeed(text) {
+        if (!feed) return;
+        // 与射击派对 addFeedMessage 同款：最多同时保留 4 条，避免刷屏
+        if (feed.children.length > 4) feed.removeChild(feed.firstChild);
+        var d = document.createElement('div');
+        d.className = 'feed-msg def-feed-msg';   // 复用射击派对同款样式 + def 前缀
+        d.textContent = text;
+        feed.appendChild(d);
+        setTimeout(function () { d.classList.add('fade-out'); }, 2600);
+        setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 3150);
+      }
+
+      // ---- 音效桥：直接复用射击派对全局 SoundFX 的同款接口 ----
+      // · 不另写 WebAudio 合成器、不新增音频文件、不改射击派对调用方式；
+      //   只调用全局 SoundFX 的 shoot() / jump()，音色与射击派对完全一致。
+      // · SoundFX 已由第二个 script 提升到全局，首次用户手势会经
+      //   initAudioOnce() 解锁音频上下文；这里 init()/resume() 均为幂等兜底。
+      // · scale 为可选音量缩放：玩家不传（同射击派对原音量），AI 传 0.6，
+      //   避免三人同时开火过吵；不改动 master 增益，避免与射击派对
+      //   暂停静音 / 恢复音量逻辑串状态。
+      // · 暂停态(defendPaused)与场景未运行时一律静音，不产生任何角色音效。
+      function defPlay(name, scale) {
+        if (isPausedNow() || !running) return;
+        try {
+          var fx = window.PartySoundFX || ((typeof SoundFX !== 'undefined') ? SoundFX : null);
+          if (!fx || typeof fx[name] !== 'function') return;
+          fx.init(); fx.resume();            // 幂等：复用同一对象的解锁入口
+          if (scale == null) fx[name]();     // 玩家：与射击派对同名同参数同音量
+          else fx[name](scale);              // AI：同音色，音量约 60%
+        } catch (err) { /* 音频不可用时静默降级，不影响任何玩法 */ }
+      }
+
+      // ---- 顶部对决栏：实时刷新两侧绿条与数值 -------------------------
+      // 左：沙袋剩余血量 = SANDBAG_HITS_REQUIRED - sandbagHits（破坏后 0）；
+      //    口径与样式完全不变。
+      // 右：「Deep Seek鲸鱼娘」剩余额度 =
+      //    WHALE_KILL_LIMIT(31) - whaleKillCount，分母固定 31。
+      //    · 初值 31/31；每有 1 只 whalegirl.png 被击杀 whaleKillCount+1，
+      //      数值就往下掉 1（击杀 3 只 → 28/31），绿条按 剩余/31 同步收缩；
+      //      【大号 whale 被击杀也计入】whaleKillCount，同样往下掉 1；
+      //    · 前 25 次普通 whale 击杀同帧在最右侧补生成一只（场上仍最多 5 只
+      //      普通 whale），但【补位不回涨该数值】；
+      //    · 第 25 次击杀起进入最后 5 只普通 whale 阶段、不再补位，并生成
+      //      唯一一只大号 whale；此后 6 个个体逐个被击杀直至 0/31；
+      //      Math.max(0,...) 防止越界为负。
+      // 两侧「黑色框 + 绿色剩余」与红色 VS 都由 CSS 固定，这里只改 scaleX
+      // 与数值文字；暂停时 frame 不跑 aiUpdate → 数值自然冻结。
+      function updateDuelBar() {
+        var sandFill  = document.getElementById('def-duel-sand-fill');
+        var whaleFill = document.getElementById('def-duel-whale-fill');
+        var sandNum   = document.getElementById('def-duel-sand-num');
+        var whaleNum  = document.getElementById('def-duel-whale-num');
+        var hpLeft = sandbagBroken ? 0 : Math.max(0, SANDBAG_HITS_REQUIRED - sandbagHits);
+        var whaleLeft = Math.max(0, WHALE_KILL_LIMIT - whaleKillCount);
+        if (sandFill)  sandFill.style.transform  = 'scaleX(' + (hpLeft / SANDBAG_HITS_REQUIRED) + ')';
+        if (whaleFill) whaleFill.style.transform = 'scaleX(' + (whaleLeft / WHALE_KILL_LIMIT) + ')';
+        if (sandNum)   sandNum.textContent   = hpLeft + '/' + SANDBAG_HITS_REQUIRED;
+        if (whaleNum)  whaleNum.textContent  = whaleLeft + '/' + WHALE_KILL_LIMIT;
+      }
+
+      // ---- 沙袋破坏：whalegirl 贴袋起跳 = 一次【连续 / 无冷却】攻击 -------
+      // 上一版带「同一窗口每只只计 1 点 + 1s 窗口超时清零」的去重语义，
+      // 不满足「连续、无冷却」，本次全部移除：
+      //   · 每只 whale 每次「落地即跳」都立刻 sandbagHits++，无冷却计时；
+      //   · 不去重、不设判定窗口、不超时清零，进度一直累积到打空血条；
+      //   · 满 SANDBAG_HITS_REQUIRED(1300) → breakSandbag() 瞬间破坏。
+      // 攻击表现复用射击派对同款 hit() 音效，不新增音频文件；
+      // 只对沙袋扣血，不对任何角色造成伤害、不计击杀、不推播报。
+      function registerSandbagHit(e) {
+        if (sandbagBroken || !obstacles.sandbag) return;
+        sandbagHits++;                       // 无冷却累加，直到打空为止
+        defPlay('hit');
+        if (sandbagHits >= SANDBAG_HITS_REQUIRED) {
+          breakSandbag();
+        } else {
+          updateDuelBar();                  // 左侧绿条实时收缩
+        }
+      }
+
+      // 瞬间破坏：隐藏贴图 + 移除碰撞体。
+      // 注意【不清零 sandbagHits】：保留累计伤害，让对决栏左侧稳定显示 0 血；
+      // 之后 aiUpdate 的 atBag 与 physics 的沙袋段因 sb===null 自动跳过，
+      // whale 不再原地跳、保持恒左速度继续走向 granary.png。
+      function breakSandbag() {
+        sandbagBroken = true;
+        var el = document.getElementById('ws-defend-sandbag');
+        if (el) el.style.display = 'none';
+        obstacles.sandbag = null;
+        measureObstacles();     // 重新测量：谷仓保留，沙袋保持 null
+        updateDuelBar();        // 左侧清零，右侧不变
+      }
+
+      // ---- 失败：任意存活 whale 碰到 granary.png → 游戏失败 ------------
+      // 停掉 rAF 循环（游戏停止运行）、清空子弹与输入、关掉可能开着的退出
+      // 确认浮层、显示独立纯白失败界面；同时让正中央 GIF 从头播放。
+      // 全部在场景闭包内完成，不改射击派对。
+      // 失败界面右上角 back.png 的返回逻辑由外壳区的 backToPartyFromDefendFail 处理。
+      function defendFail() {
+        if (defendFailed) return;
+        defendFailed = true;
+        running = false;
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = 0;
+        bullets = [];
+        wantShoot = false;
+        joystickX = 0;
+        var ec = document.getElementById('exit-confirm');
+        if (ec) ec.classList.remove('show');
+        var fail = document.getElementById('white-screen-defend-fail');
+        if (fail) fail.classList.add('show');
+        // 失败界面出现 → 正中央 whalegirldancing.gif 从头播放
+        if (window.showDefendFailGif) window.showDefendFailGif();
+      }
+
+      // ---- 补位：一只【普通】whale 阵亡后，同帧在游玩界面最右侧重新生成 ----
+      // 复用同一个实体对象（entities 中普通 whale 对象恒 5 个 → 最多同时 5 只），
+      // 不新增数组元素、不新增图片加载。状态全部复位为"刚入场"的恒左冲锋态。
+      // 是否调用由 NORMAL_RESPAWN_UNTIL(25) 控制：第 26 次击杀起不再补位，
+      // 从此进入「本对局最后 5 个正常大小 whale」阶段。大号 whale 不调用本函数。
+      function respawnWhale(w) {
+        w.alive = true;
+        w.hp = w.maxHp;
+        w.x = Math.max(0, window.innerWidth - w.w - 2);  // 最右侧，不出屏
+        w.y = floorY() - w.h;
+        w.vx = 0; w.vy = 0; w.grounded = true;
+        w.facingRight = false; w.aiDir = -1;             // 第一帧就朝左
+        w.bagSide = 'right';                             // 从最右侧来，锁沙袋右侧
+        w.aiTimer = 0; w.nextFire = 0;
+        w.aimRight = null; w.aiming = false;
+        // 播报②：每次在最右侧补生成 1 只普通 whalegirl 推 1 条
+        pushFeed(DEF_FEED_RESPAWN);
+      }
+
+      // ---- 生成【大号版】whalegirl.png（本局仅一次）----------------------
+      // 触发时机：累计击杀数达到 BIG_WHALE_TRIGGER(25) 且有普通 whale 被击杀
+      // 的同一帧。它是额外的第 6 个个体，不占「同时最多 5 只普通 whale」上限；
+      // 生成后 bigWhaleSpawned=true，本局（含补位 / 失败 / 暂停）永不再生成。
+      // 复用 entities 末位那个 alive=false 的 bigWhale 对象，不新增图片加载。
+      // 1.8 倍宽高已由 layout() 按 e.scale 算好；这里只把它放到画面最右侧。
+      function spawnBigWhale() {
+        if (bigWhaleSpawned || !bigWhale) return;
+        bigWhaleSpawned = true;
+        bigWhale.alive = true;
+        bigWhale.hp = bigWhale.maxHp;
+        bigWhale.x = Math.max(0, window.innerWidth - bigWhale.w - 2); // 最右侧
+        bigWhale.y = floorY() - bigWhale.h;
+        bigWhale.vx = 0; bigWhale.vy = 0; bigWhale.grounded = true;
+        bigWhale.facingRight = false; bigWhale.aiDir = -1;   // 第一帧就朝左
+        bigWhale.bagSide = 'right';                           // 锁沙袋右侧
+        bigWhale.aiTimer = 0; bigWhale.nextFire = 0;
+        bigWhale.aimRight = null; bigWhale.aiming = false;
+        // 播报③：唯一一只大号 whalegirl 登场时推 1 条（本局仅一次）
+        pushFeed(DEF_FEED_BIG);
+      }
+
+      // ---- 子弹：飞行 + 【只对存活 whalegirl 的命中/伤害判定】----
+      // 命中解算在 frame() 的 bullets.filter 里：目标集合只含 chargeLeft
+      // 且 alive 的 whale，因此 catgirl / enemy / luni 三方【互不伤害】；
+      // 五个 whale 根本不调用 fire()，自然也不会有子弹与枪声 → 绝不反击。
+      function fire(e) {
+        // 方向优先级：enemy/luni 的"自动攻击目标方向"(aimRight) > 自身朝向。
+        // 贴图仍按既有"移动方向翻转"规则绘制，不强行扭头，避免破坏上一版
+        // 确认过的左右朝向效果；这里只让子弹朝目标 whale 飞。
+        var dir;
+        if (e.aimRight === true)       dir = 1;
+        else if (e.aimRight === false) dir = -1;
+        else                           dir = e.facingRight ? 1 : -1;
+        bullets.push({
+          x: e.x + e.w / 2 + dir * (e.w * 0.28),
+          y: e.y + e.h * 0.52,
+          vx: dir * BULLET_SPEED,
+          color: e.color,
+          owner: e.id          // 来源标识/绘制着色；命中判定只认目标是否为存活 whale
+        });
+        // 开火音：玩家原音量，AI 约 60%（与射击派对同一条枪声）
+        defPlay('shoot', e.isPlayer ? 1 : 0.6);
+      }
+
+      // ---- AI：左行冲锋型(whale) / 自动攻击型(enemy、luni) -------------
+      //  · chargeLeft（5 只普通 whale）：恒定朝左、绝不回头、撞沙袋后落地即连跳；
+      //    不开火、不产生子弹，对三角色零伤害。
+      //  · 大号 whale(isBig)：同样恒左冲锋、绝不回头、安静不开火，但【不能跳】
+      //    —— 跳过下面的全部起跳分支，因此永远不扣 sandbag.png 的血。
+      //  · enemy / luni：原有随机换向 + 随机跳跃保留；新增「锁定最近存活
+      //    whale 并按 FIRE_CD 持续开火」与「贴沙袋即自动起跳试图越过」。
+      //  · 玩家 catgirl 不走这里（由摇杆 / 跳 / 开火直接控制）。
+      //  · 已阵亡 whale（alive=false）直接跳过，不移动、不跳、不扣沙袋血。
+      function aiUpdate(e, t, dt) {
+        if (e.alive === false) return;
+        // ===== 左行冲锋型：5 个 whalegirl.png =====
+        // ① 恒向左、绝不回头：不再走下面的随机换向逻辑，aiDir 锁 -1、
+        //    facingRight 锁 false，速度沿用原有 AI 速度 SPEED*0.6。
+        //    physics() 在贴沙袋那一帧会把 vx 清零，但下一帧这里立刻恢复，
+        //    所以"一直按原速度朝 granary.png 顶"始终成立。
+        if (e.chargeLeft) {
+          e.aiDir = -1;
+          e.facingRight = false;
+          e.vx = -SPEED * 0.6;
+
+          // ② 是否已顶到沙袋：直接读当前渲染矩形 + 当前 x，不依赖 physics
+          //    的跨帧标志。沙袋被破坏(sb===null)后 atBag 恒 false，
+          //    whale 随即停止原地跳、继续恒左走向谷仓。
+          var sbCr = obstacles.sandbag;
+          var atBag = !!(!sandbagBroken && sbCr && sbCr.width > 0 &&
+                         e.x <= sbCr.right + 1 && e.x + e.w > sbCr.left);
+
+          // ③ 撞袋后「不停的跳跃」：一落地(grounded)立刻再起跳，
+          //    每次起跳复用射击派对同款 jump() 音效（AI 音量约 60%）。
+          //    空中 grounded=false 不重复触发；因沙袋是贯穿屏高的隐形墙，
+          //    跳起来横向仍被挡回，视觉上就是"在沙袋旁原地不停跳"。
+          //    同时把这一跳登记为对沙袋的一次【连续 / 无冷却】攻击：
+          //    每次起跳都立刻扣 1 点血、对决栏左侧实时收缩，扣满 1300 即破坏。
+          //    【大号 whale 不能跳】：isBig 时整段跳过，它只会被 blockBag
+          //    隐形墙贴边挡住（physics 置 vx=0、下一帧 aiUpdate 再恢复恒左速度），
+          //    看起来就是安静地顶在沙袋旁，既不跳跃也不破坏沙袋。
+          if (!e.isBig && atBag && e.grounded) {
+            e.vy = JUMP;
+            e.grounded = false;
+            defPlay('jump', 0.6);
+            registerSandbagHit(e);
+          }
+          // 安静型：不调用 fire()，绝不产生子弹与枪声
+          return;
+        }
+
+        // ===== enemy / luni：随机移动 + 随机跳跃 + 自动攻击 + 贴袋跳跃 =====
+        var didJump = false;
+        e.aiTimer -= dt;
+        if (e.aiTimer <= 0) {
+          e.aiTimer = 700 + Math.random() * 1400;
+          e.aiDir = (Math.random() * 3 | 0) - 1;         // -1 / 0 / 1 → 左 / 停 / 右
+          if (e.aiDir !== 0) e.facingRight = e.aiDir > 0;   // AI 换向时同步朝向
+          // ① 随机跳跃（原有节奏，保留）
+          if (e.grounded && Math.random() < 0.28) {
+            e.vy = JUMP; e.grounded = false; didJump = true;
+            // 起跳音：enemy / luni 复用射击派对同款 jump()，AI 音量约 60%；
+            // 五个 whale 的起跳音在上面 chargeLeft 分支里单独触发。
+            defPlay('jump', 0.6);
+          }
+        }
+        e.vx = e.aiDir * SPEED * 0.6;                     // 随机左右移动（保留）
+
+        // ② 试图穿过 sandbag.png 时跳跃：沙袋尚在、站在地面、水平贴到沙袋
+        //    （且不是已经站在袋顶）→ 自动起跳尝试越过；跳不过落回后再贴再跳。
+        //    与上面的随机跳跃用 didJump 去重，避免同一帧叠两次跳跃音。
+        var sbAi = obstacles.sandbag;
+        if (!didJump && !sandbagBroken && sbAi && sbAi.width > 0 && e.grounded &&
+            e.x + e.w > sbAi.left - 2 && e.x < sbAi.right + 2 &&
+            (e.y + e.h) > sbAi.top + 2) {
+          e.vy = JUMP; e.grounded = false;
+          defPlay('jump', 0.6);
+        }
+
+        // ③ 自动攻击所有 whalegirl：每帧在"全部存活 whale"里锁定最近的一只，
+        //    任意 whale 都可能成为目标（不挑个体、不设阵营）。目标方向写进
+        //    aimRight，由 fire() 决定子弹飞行方向。全部阵亡则回落自身朝向。
+        var target = null, bestDx = Infinity;
+        for (var wi = 0; wi < entities.length; wi++) {
+          var w = entities[wi];
+          if (!w.chargeLeft || w.alive === false) continue;
+          var dx = Math.abs((w.x + w.w / 2) - (e.x + e.w / 2));
+          if (dx < bestDx) { bestDx = dx; target = w; }
+        }
+        e.aimRight = target
+          ? ((target.x + target.w / 2) > (e.x + e.w / 2))
+          : null;
+        // 【枪口对准】攻击期间把立绘朝向也设为目标方向：
+        //   · facingRight = aimRight → drawEnt 的镜像翻转让枪口正对 whale；
+        //   · aiming=true → drawEnt 跳过"按 vx 移动方向兜底"，否则移动时会把
+        //     朝向又扭回走路方向、枪口就不对准了；
+        //   · fire() 里 dir 已是 aimRight 优先，子弹与枪口方向一致。
+        // 目标清空（whale 全灭）时回落为按移动方向翻转，不影响其他角色。
+        if (target) {
+          e.facingRight = (e.aimRight === true);
+          e.aiming = true;
+        } else {
+          e.aiming = false;
+        }
+
+        // ④ 持续开火：沿用全局 FIRE_CD(200ms) 节奏，不再是纯表演的稀发。
+        //    只有 enemy / luni 执行；五个 whale 走 chargeLeft 分支安静不开火。
+        if (!e.quiet && (!e.nextFire || t > e.nextFire)) {
+          fire(e);
+          e.nextFire = t + FIRE_CD;
+        }
+      }
+
+      // ---- 物理：重力 / 落地 / 障碍碰撞 ----
+      // 竖向先积分，再处理「落到沙袋顶」与「落到地面带」；
+      // 水平后积分，再解算谷仓(固体墙)与沙袋(可跳越的矮障碍)。
+      // 九个实体（含大号 whale）共用同一套规则；物理层本身不结算任何伤害
+      //（伤害只在 frame() 的子弹命中 whale 处处理）。
+      function physics(e) {
+        if (e.alive === false) return;   // 阵亡 whale 直接消失、不再参与物理
+        if (defendFailed) return;        // 已失败：本帧剩余实体不再结算
+        if (!obsValid()) measureObstacles();
+
+        e.vy += GRAVITY;
+        var prevY = e.y;
+        e.y  += e.vy;
+        var prevX = e.x;
+        e.x  += e.vx;
+
+        var g  = obstacles.granary;
+        var sb = obstacles.sandbag;
+        var foot     = e.y + e.h;
+        var prevFoot = prevY + e.h;
+
+        // ① 落到沙袋顶：下落中、上一帧脚底还在顶面之上、本帧穿到顶面之下，
+        //    且水平与沙袋有重叠 → 脚底停在沙袋顶面，之后可继续左右走动。
+        var landedOnBag = false;
+        // blockBag 角色（whale）不吸附袋顶：连"站在沙袋上"也不允许，
+        // 与下面 ④ 的隐形墙一起保证「无论跳多高都绝对过不去」。
+        if (!e.blockBag && sb && e.vy >= 0 && prevFoot <= sb.top + 2 && foot >= sb.top &&
+            e.x + e.w > sb.left && e.x < sb.right) {
+          e.y = sb.top - e.h;
+          e.vy = 0;
+          landedOnBag = true;
+        }
+
+        // ② 落到地面带（射击派对同款地面线）
+        var fy = floorY() - e.h;
+        if (e.y >= fy) { e.y = fy; e.vy = 0; e.grounded = true; }
+        else if (landedOnBag) { e.grounded = true; }
+        else e.grounded = false;
+
+        // ③ 谷仓：从顶到底贯穿屏高的固体墙，任何高度都不可穿过，只做侧向贴边
+        //    （谷仓贴左边缘，角色实际只会被挡在它的右边缘）。
+        //    【新增】任意存活 whale 碰到它 → 保卫派对游戏失败、停止运行、
+        //    进入纯白失败界面；三角色(catgirl/enemy/luni)碰到仍只是贴边。
+        if (g && g.width > 0 && e.x < g.right && e.x + e.w > g.left &&
+            e.y < g.bottom && foot > g.top) {
+          if (e.chargeLeft && !defendFailed) {
+            defendFail();
+            return;
+          }
+          if (prevX + e.w <= g.left + 1)       e.x = g.left - e.w;  // 自左撞（贴屏外，理论不触发）
+          else if (prevX >= g.right - 1)       e.x = g.right;        // 自右撞墙：贴边停下
+          else                                 e.x = g.right;        // 初始就在墙内：推到墙右侧
+          e.vx = 0;
+        }
+
+        // ④ 沙袋：按角色分两套规则。
+        //    · 普通（catgirl / enemy / luni）：地面行走被挡；脚底高过袋顶即可
+        //      从上方横越，也能落袋顶站住再走下 —— 行为一字未改。
+        //    · whale(blockBag)：沙袋升级为「贯穿屏高的隐形墙」，不看脚底高度、
+        //      不判 overBag、不吸附袋顶 → 无论跳多高、从哪一侧都绝对无法
+        //      跳过或穿过。用 bagSide 固定贴回进入侧，杜绝空中被 else 分支
+        //      瞬间推到另一侧造成的「假穿越」。
+        //      被挡时只把 vx 置 0，不动 aiDir / facingRight：chargeLeft 的
+        //      whale 下一帧仍由 aiUpdate 恢复恒左速度并落地即跳，绝不回头。
+        if (sb && sb.width > 0) {
+          if (e.blockBag) {
+            // 水平只要与沙袋有重叠就贴边，垂直方向不作任何放行（贯穿屏高）。
+            if (e.x < sb.right && e.x + e.w > sb.left) {
+              var side = e.bagSide;
+              if (!side) {
+                side = (prevX >= sb.right - 1) ? 'right'
+                     : (prevX + e.w <= sb.left + 1) ? 'left'
+                     : (e.x + e.w / 2 >= (sb.left + sb.right) / 2 ? 'right' : 'left');
+                e.bagSide = side;
+              }
+              e.x = (side === 'right') ? sb.right : (sb.left - e.w);
+              e.vx = 0;                       // 只停位移，不改 AI 方向 → 继续左右晃
+            }
+          } else {
+            // 原矮障碍逻辑（保持原样）：可跳过、可落顶、可走下
+            var footNow = e.y + e.h;
+            var overBag = footNow <= sb.top + 1;   // 跳起越过 / 正站在顶上
+            if (!overBag && e.x < sb.right && e.x + e.w > sb.left &&
+                footNow > sb.top && e.y < sb.bottom) {
+              if (prevX + e.w <= sb.left + 1)      e.x = sb.left - e.w;  // 从左往右撞
+              else if (prevX >= sb.right - 1)      e.x = sb.right;        // 从右往左撞
+              else                                  e.x = (e.vx >= 0) ? sb.right : sb.left - e.w;
+              e.vx = 0;
+            }
+          }
+        }
+
+        // ⑤ 屏幕左右边界（保持原有逻辑）
+        if (e.x < 0) { e.x = 0; e.vx = 0; }
+        if (e.x + e.w > window.innerWidth) { e.x = window.innerWidth - e.w; e.vx = 0; }
+      }
+
+      function isPausedNow() {
+        return (typeof defendPaused !== 'undefined') && defendPaused === true;
+      }
+
+      // ---- 绘制：角色 + 头顶圆角血条 + 玩家蓝色倒三角 + 表演子弹 ----
+      function roundRect(x, y, w, h, r) {
+        cx.beginPath();
+        cx.moveTo(x + r, y);
+        cx.arcTo(x + w, y, x + w, y + h, r);
+        cx.arcTo(x + w, y + h, x, y + h, r);
+        cx.arcTo(x, y + h, x, y, r);
+        cx.arcTo(x, y, x + w, y, r);
+        cx.closePath();
+      }
+      // ---- 绘制单个角色：本体按左右朝向水平镜像，头顶 UI 不翻转 ----
+      // 与射击派对 drawEntity() 中 "if (!ent.facingRight) ctx.scale(-1, 1)"
+      // 同款思路：以角色自身竖直中轴做 scale(-1,1)，保持占位框位置不变，
+      // 只让贴图画左右镜像。原素材是持枪朝右的立绘，翻转后枪口与脸朝左，
+      // 于是"向左走脸朝左 / 向右走脸朝右"与射击派对观感一致。
+      // 注意：此处 cx 是本场景的 2D 上下文（闭包顶部 var cx = cv.getContext('2d')），
+      // 与射击派对 drawEntity 里表示中心 x 的局部 const cx 不是同一个东西。
+      function drawEnt(e) {
+        // 血量归零的 whale：直接消失（不画本体、不画血条、不留残影）
+        if (e.alive === false) return;
+        // ① 先按图片真实比例校正宽度：这一步会改 e.x / e.w，
+        //    必须放在计算镜像轴之前，否则翻转中轴会偏、角色会左右横跳。
+        if (imgOK(e)) {
+          var realW = e.img.naturalWidth * (e.h / e.img.naturalHeight);
+          if (Math.abs(realW - e.w) > 0.5) { e.x += (e.w - realW) / 2; e.w = realW; }
+        }
+
+        // ② 朝向判定：默认以"实际移动速度"优先兜底，静止时沿用 facingRight。
+        //    【新增】enemy/luni 攻击中(aiming=true) 时【优先用瞄准朝向】，
+        //    让枪口正对被锁定的 whale，不被 vx 的移动方向翻转覆盖；
+        //    非攻击角色(catgirl 玩家 / whale / 无目标时的 AI) 保持原规则，
+        //    "向左走脸朝左 / 向右走脸朝右"与射击派对一致。
+        var faceRight = e.facingRight;
+        if (!e.aiming) {
+          if (e.vx > 0.1)      faceRight = true;
+          else if (e.vx < -0.1) faceRight = false;
+        }
+
+        // ③ 只把「角色本体」包进镜像变换，画完立刻 restore，
+        //    后面的血条、蓝色倒三角、以及其它角色都不受影响。
+        cx.save();
+        if (!faceRight) {
+          var axisX = e.x + e.w / 2;      // 角色自身竖直中轴
+          cx.translate(axisX, 0);
+          cx.scale(-1, 1);
+          cx.translate(-axisX, 0);
+        }
+        if (imgOK(e)) {
+          cx.drawImage(e.img, e.x, e.y, e.w, e.h);
+        } else {
+          // 图片未就绪时的占位色块同样跟随朝向，避免翻转前后观感割裂
+          cx.fillStyle = e.color;
+          cx.globalAlpha = 0.35;
+          cx.fillRect(e.x, e.y, e.w, e.h);
+          cx.globalAlpha = 1;
+        }
+        cx.restore();
+
+        // ④ 头顶血条：用绝对坐标正常绘制，绝不跟着镜像翻转；
+        //    按 hp / maxHp 实时收缩，whale 被子弹命中后真实掉血
+        //    【本次改动】结构对齐射击派对 drawEntity() 的圆角血条：
+        //      · 血量填充统一为射击派对同款绿色 DEF_HP_FILL(#32CD32)，
+        //        不再用 e.color —— 修掉「血条颜色和血条框颜色都一样」；
+        //      · 血条框(描边) 用各自 e.color 且保持不变：
+        //        catgirl 蓝框 / enemy 绿框 / luni 红框；按确认，enemy
+        //        「绿框 + 绿填充」也不换色；
+        //      · 底色半透明黑槽、尺寸、位置、满格比例一律不动。
+        //    整段用 save/restore 包住，lineWidth / strokeStyle 不泄漏到
+        //    后面的倒三角、子弹与其它角色绘制。
+        var bw = Math.max(48, e.w * 0.72), bh = 8;
+        var bx = e.x + (e.w - bw) / 2, by = e.y - 18;
+        cx.save();
+        // 底色槽（保持原样）
+        cx.fillStyle = 'rgba(0,0,0,0.18)';
+        roundRect(bx, by, bw, bh, 4); cx.fill();
+        // 血量填充：九个实体统一绿色，与射击派对一致（大号按 200/200 收缩）
+        cx.fillStyle = DEF_HP_FILL;
+        roundRect(bx, by, bw * (e.hp / e.maxHp), bh, 4); cx.fill();
+        // 血条框：描边色 = 角色自身主题色，保持不变（对齐射击派对 strokeStyle=ent.color）
+        cx.strokeStyle = e.color;
+        cx.lineWidth = 2;
+        roundRect(bx, by, bw, bh, 4); cx.stroke();
+        cx.restore();
+        // 玩家头顶蓝色倒三角
+        if (e.isPlayer) {
+          var tx = e.x + e.w / 2, ty = by - 12;
+          cx.fillStyle = '#00bfff';
+          cx.beginPath();
+          cx.moveTo(tx - 9, ty); cx.lineTo(tx + 9, ty); cx.lineTo(tx, ty + 12);
+          cx.closePath(); cx.fill();
+        }
+      }
+      function draw() {
+        cx.clearRect(0, 0, cv.width, cv.height);
+        bullets.forEach(function (b) {
+          cx.fillStyle = b.color;
+          cx.beginPath(); cx.arc(b.x, b.y, 4, 0, Math.PI * 2); cx.fill();
+        });
+        entities.forEach(drawEnt);
+      }
+
+      function frame(t) {
+        if (!running) return;
+        rafId = requestAnimationFrame(frame);
+        var dt = lastT ? Math.min(t - lastT, 34) : 16;
+        lastT = t;
+
+        if (!isPausedNow()) {
+          var p = entities[0];
+          // 玩家：摇杆移动 / 跳 / 按住开火连发
+          p.vx = joystickX * SPEED;
+          // 摇杆向右 → 脸朝右；向左 → 脸朝左（绘制层做水平镜像）
+          if (joystickX !== 0) p.facingRight = joystickX > 0;
+          if (wantShoot && t - lastPlayerFire > FIRE_CD) { fire(p); lastPlayerFire = t; }
+          // 所有非玩家角色统一走 AI：enemy / luni 随机移动 + 自动攻击 whale
+          // + 贴袋起跳；5 只普通 whale(chargeLeft) 恒左冲锋、贴袋连跳、绝不回头；
+          // 大号 whale(已生成时) 恒左冲锋但【不跳】。
+          // 阵亡 / 尚未生成(alive=false) 的 whale 在 aiUpdate 开头即被跳过。
+          // 用遍历而非写死下标，后续增减角色无需再改这里。
+          for (var ai = 1; ai < entities.length; ai++) {
+            aiUpdate(entities[ai], t, dt);
+          }
+          // 全员平等地走同一套物理：物理层无伤害结算
+          entities.forEach(physics);
+          // 若本帧 physics 里触发了「whale 碰到 granary → 失败」，立刻清空
+          // 子弹并跳过后续结算；失败界面已盖在最上层、循环也已停止。
+          if (defendFailed) bullets = [];
+          // ---- 子弹：飞行 + 出界回收 + 【只对存活 whale 的命中判定】----
+          // 目标集合只含 chargeLeft && alive 的 whalegirl（含大号 whale）：
+          //   · catgirl / enemy / luni 的子弹都能打掉 whale 的血；
+          //   · 三角色永远不在目标集合里 → 彼此零伤害、whale 也绝不反击；
+          //   · 同一发子弹命中即销毁，不穿透、不重复结算。
+          if (!defendFailed) bullets = bullets.filter(function (b) {
+            b.x += b.vx;
+            if (b.x < -20 || b.x > cv.width + 20) return false;
+            for (var wi = 0; wi < entities.length; wi++) {
+              var w = entities[wi];
+              if (!w.chargeLeft || w.alive === false) continue;
+              if (b.x >= w.x && b.x <= w.x + w.w &&
+                  b.y >= w.y && b.y <= w.y + w.h) {
+                w.hp -= BULLET_DAMAGE;
+                defPlay('hit');                    // 复用射击派对同款受击音
+                if (w.hp <= 0) {
+                  w.hp = 0;
+                  w.alive = false;                // 直接消失（不留残影）
+                  w.vx = 0; w.vy = 0;
+                  whaleKillCount++;               // 累计被击杀数（普通 + 大号都计入）
+                  // 播报①：每击退 1 只 whalegirl（普通 + 大号）推 1 条
+                  pushFeed(DEF_FEED_KILL);
+                  // 【大号 whale】被击杀：直接消失、【不补位】，但同样让
+                  //   对决栏 31/31 往下掉 1（上面这行 whaleKillCount++ 已计入）。
+                  // 【普通 whale】：
+                  //   · 击杀数 <= NORMAL_RESPAWN_UNTIL(25)：同帧在最右侧补位，
+                  //     保持场上恒 5 只普通 whale；补位不回涨右侧数值；
+                  //   · 击杀数达到 BIG_WHALE_TRIGGER(25) 且大号尚未生成：
+                  //     同帧生成唯一一只大号 whale（额外第 6 个个体）；
+                  //   · 击杀数 > 25：不再补位，进入「最后 5 只普通 whale」
+                  //     逐个递减阶段，连同大号一起被击杀到 0/31。
+                  if (!w.isBig) {
+                    if (whaleKillCount <= NORMAL_RESPAWN_UNTIL) respawnWhale(w);
+                    if (whaleKillCount >= BIG_WHALE_TRIGGER && !bigWhaleSpawned) {
+                      spawnBigWhale();
+                    }
+                  }
+                  updateDuelBar();                // 右侧 31/31 往下掉 1
+                }
+                return false;                     // 命中即销毁这发子弹
+              }
+            }
+            return true;
+          });
+        } else {
+          // 暂停：冻结输入，避免在遮罩下仍蓄力
+          wantShoot = false;
+          joystickX = 0;
+        }
+        draw();   // 暂停时仍绘制当前静态帧，画面不黑
+      }
+
+      // ---- 复位：清空子弹、角色归位、松开输入 ----
+      function resetStick() {
+        var st = document.getElementById('def-joystick-stick');
+        var bs = document.getElementById('def-joystick-base');
+        if (st) st.style.transform = 'translate(-50%, -50%)';
+        if (bs) { bs.style.left = '40px'; bs.style.bottom = '40px'; }
+      }
+      function resetScene() {
+        bullets = [];
+        // 播报栏随本局全量复位清空，不残留上一局的 3 句提示
+        if (feed) feed.innerHTML = '';
+        joystickX = 0; wantShoot = false;
+        lastPlayerFire = 0; lastT = 0;
+        joyTouchId = null; joyStartX = null;
+        // 进入 / 重开本局（含失败界面点 back 返回）：全量复位、不保存任何进度。
+        // 必须放在 measureObstacles() 之前，否则碰撞体会被当作"已破坏"跳过。
+        sandbagBroken = false;
+        sandbagHits = 0;
+        whaleKillCount = 0;                    // 本局累计击杀数清零（右侧回 31/31）
+        bigWhaleSpawned = false;               // 大号 whale 本局可重新生成一次
+        defendFailed = false;                  // 清除失败态，允许重新开局
+        var sbEl = document.getElementById('ws-defend-sandbag');
+        if (sbEl) sbEl.style.display = '';     // 回落到 CSS 的 display:block
+        var failEl = document.getElementById('white-screen-defend-fail');
+        if (failEl) failEl.classList.remove('show');   // 隐藏失败界面
+        // 同步停播中央动图（清 src），不残留、不占资源
+        if (window.hideDefendFailGif) window.hideDefendFailGif();
+        // 全部角色回满血、5 只普通 whale 全部复活、清除瞄准/攻击朝向状态；
+        // 【大号 whale 不复活】：alive=false 保持"尚未入场"，等本局第 25 次
+        // 击杀才由 spawnBigWhale() 生成，确保每次进入都是全新一局。
+        entities.forEach(function (w) {
+          w.alive = !w.isBig;
+          w.hp = w.maxHp;
+          w.aimRight = null;
+          w.aiming = false;
+        });
+        measureObstacles();                    // 进入 / 重开时按当前屏幕刷新碰撞体
+        entities.forEach(function (e, idx) {
+          e.x = window.innerWidth * e.xRatio;
+          e.y = floorY() - e.h;
+          // 初始位置若落在谷仓墙体内（多见于窄屏 / 竖屏），先推到墙右侧
+          if (obstacles.granary && e.x < obstacles.granary.right) {
+            e.x = obstacles.granary.right;
+          }
+          // 初始若与沙袋在地面上重叠，推到沙袋右侧，避免开局卡进障碍
+          if (obstacles.sandbag && e.x < obstacles.sandbag.right &&
+              e.x + e.w > obstacles.sandbag.left) {
+            e.x = obstacles.sandbag.right;
+          }
+          // blockBag 角色（whale）：按归位后的初始站位锁定「贴边侧」，
+          // 之后沙袋碰撞永远把它贴回这一侧，绝不因空中帧被推到另一侧。
+          // 5 只普通 whale（以及稍后生成的大号）初始都在沙袋右侧 →
+          // bagSide='right'，恒向左顶住沙袋。大号此时 alive=false 不参与物理。
+          if (e.blockBag) {
+            var sb0 = obstacles.sandbag;
+            e.bagSide = (sb0 && (e.x + e.w / 2) < (sb0.left + sb0.right) / 2)
+                      ? 'left' : 'right';
+          }
+          e.vx = 0; e.vy = 0; e.grounded = true; e.facingRight = true;
+          // 左行冲锋型从第一帧就朝左：避免开局瞬间朝右闪一下，确保绝不回头
+          if (e.chargeLeft) { e.facingRight = false; e.aiDir = -1; }
+          // 按索引错开各 AI 的首次决策时刻，避免开局多个 AI 同时起跳把跳跃音叠在一起
+          e.hp = e.maxHp; e.aiTimer = idx * 160; e.aiDir = 0; e.nextFire = 0;
+        });
+        resetStick();
+        updateDuelBar();                       // 两侧回满：1300/1300 与 31/31
+      }
+
+      // ---- 启动 / 停止（供外壳逻辑包装调用）----
+      function startDefendScene() {
+        resize();
+        resetScene();
+        // 共享同一音效对象：若上一局在射击派对暂停态退出（master 被置 0），
+        // 进入保卫派对时恢复到射击派对的标准音量 0.35，避免本局静音。
+        try {
+          var sfx = window.PartySoundFX || ((typeof SoundFX !== 'undefined') ? SoundFX : null);
+          if (sfx && sfx.master) sfx.master.gain.value = 0.35;
+        } catch (err) { /* 音频不可用时忽略 */ }
+        if (feed) feed.innerHTML = '';   // 清空上一局残留，本局不推入场提示
+        // 播报栏【只播 3 句固定文案】，由击杀 / 补位 / 大号登场三处触发
+        if (!running) { running = true; lastT = 0; rafId = requestAnimationFrame(frame); }
+      }
+      function stopDefendScene() {
+        running = false;                 // 下一帧不再产生任何角色音效
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = 0;
+        resetScene();
+        if (feed) feed.innerHTML = '';
+        // 已触发的 shoot/jump 都是 0.10~0.15s 的短音，会自然衰减结束；
+        // 此处不操作 master，避免影响射击派对自己的暂停静音 / 恢复音量。
+      }
+      window.startDefendScene = startDefendScene;
+      window.stopDefendScene  = stopDefendScene;
+
+      // ---- 摇杆（触摸 + 鼠标；暂停时不响应）----
+      var zone  = document.getElementById('def-joystick-zone');
+      var base  = document.getElementById('def-joystick-base');
+      var stick = document.getElementById('def-joystick-stick');
+      function onDown(clientX, clientY) {
+        if (isPausedNow() || !running) return;
+        joyStartX = clientX;
+        base.style.left = (clientX - 60) + 'px';
+        base.style.bottom = (window.innerHeight - clientY - 60) + 'px';
+      }
+      function onMove(clientX) {
+        if (isPausedNow() || !running || joyStartX === null) return;
+        var dx = clientX - joyStartX;
+        if (dx > MAX_DIST) dx = MAX_DIST;
+        if (dx < -MAX_DIST) dx = -MAX_DIST;
+        stick.style.transform = 'translate(calc(-50% + ' + dx + 'px), -50%)';
+        joystickX = dx / MAX_DIST;
+      }
+      function onUp() {
+        joyTouchId = null; joyStartX = null; joystickX = 0;
+        resetStick();
+      }
+      zone.addEventListener('touchstart', function (e) {
+        if (isPausedNow()) return;
+        var t = e.changedTouches[0];
+        joyTouchId = t.identifier;
+        onDown(t.clientX, t.clientY);
+        e.preventDefault();
+      }, { passive: false });
+      zone.addEventListener('touchmove', function (e) {
+        if (joyTouchId === null || isPausedNow()) return;
+        for (var i = 0; i < e.touches.length; i++) {
+          if (e.touches[i].identifier === joyTouchId) {
+            onMove(e.touches[i].clientX); e.preventDefault(); return;
+          }
+        }
+      }, { passive: false });
+      zone.addEventListener('touchend', function (e) {
+        for (var i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === joyTouchId) { onUp(); return; }
+        }
+      });
+      zone.addEventListener('touchcancel', onUp);
+      zone.addEventListener('mousedown', function (e) {
+        if (isPausedNow()) return;
+        joyTouchId = 'mouse'; onDown(e.clientX, e.clientY);
+      });
+      window.addEventListener('mousemove', function (e) {
+        if (joyTouchId === 'mouse') onMove(e.clientX);
+      });
+      window.addEventListener('mouseup', function () {
+        if (joyTouchId === 'mouse') onUp();
+      });
+
+      // ---- 跳（点按起跳） / 开火（按住连发）；暂停时一律拦截 ----
+      var bJump  = document.getElementById('def-btn-jump');
+      var bShoot = document.getElementById('def-btn-shoot');
+      function tryJump() {
+        if (isPausedNow() || !running) return;
+        var p = entities[0];
+        if (p.grounded) {
+          p.vy = JUMP; p.grounded = false;
+          defPlay('jump');                   // 玩家起跳：与射击派对完全同款同音量
+        }
+      }
+      bJump.addEventListener('touchstart', function (e) { tryJump(); e.preventDefault(); }, { passive: false });
+      bJump.addEventListener('mousedown', tryJump);
+      bShoot.addEventListener('touchstart', function (e) {
+        if (!isPausedNow() && running) wantShoot = true;
+        e.preventDefault();
+      }, { passive: false });
+      bShoot.addEventListener('touchend', function (e) { wantShoot = false; e.preventDefault(); }, { passive: false });
+      bShoot.addEventListener('touchcancel', function () { wantShoot = false; });
+      bShoot.addEventListener('mousedown', function () {
+        if (!isPausedNow() && running) wantShoot = true;
+      });
+      window.addEventListener('mouseup', function () { wantShoot = false; });
+    })();
+
+    // ---- 外壳联动：进入时启动场景、退出时停止并复位 ----
+    // 以包装方式挂到既有函数上，不改动原函数体，射击派对完全不受影响。
+    (function () {
+      var _enter = doEnterDefendParty;
+      doEnterDefendParty = function () {
+        _enter();
+        // 每次从派对选择点「保卫派对」进入都重新开始：先隐藏可能残留的失败
+        // 界面，再 startDefendScene() → resetScene() 全量复位为全新一局。
+        var f0 = document.getElementById('white-screen-defend-fail');
+        if (f0) f0.classList.remove('show');
+        // 重新开局：先停播上一局可能残留的失败界面动图
+        if (window.hideDefendFailGif) window.hideDefendFailGif();
+        if (window.startDefendScene) window.startDefendScene();
+      };
+      var _exit = confirmExitToPartySelect;
+      confirmExitToPartySelect = function () {
+        if (window.stopDefendScene) window.stopDefendScene();
+        _exit();
+      };
+
+      // ---- 失败界面右上角 back.png：不保存进度，返回派对选择 ----
+      var failScreen = document.getElementById('white-screen-defend-fail');
+      var failBack = document.getElementById('ws-defend-fail-back');
+      function backToPartyFromDefendFail() {
+        // stopDefendScene() 内部调 resetScene() 全量复位：沙袋回满 1300、
+        // whale 全部复活归位、击杀数清零、血量回满、失败态/失败界面复位。
+        // 不保存任何进度，且不重新启动游戏，只回到派对选择界面。
+        if (window.stopDefendScene) window.stopDefendScene();
+        resetDefendPauseState();
+        if (failScreen) failScreen.classList.remove('show');
+        // 不保存进度返回派对选择：停播并清掉正中央动图
+        if (window.hideDefendFailGif) window.hideDefendFailGif();
+        whiteScreenDefend.classList.remove('show');
+        whiteScreen.classList.add('show');
+        SoundFXClick();
+        window.scrollTo(0, 0);
+      }
+      if (failBack) {
+        failBack.addEventListener('click', backToPartyFromDefendFail);
+        failBack.addEventListener('touchend', function (e) {
+          e.preventDefault();
+          backToPartyFromDefendFail();
+        });
+      }
+    })();
+  </script>
+  <script>
+  // ============================================================
+  // 音效引擎：用 Web Audio API 实时合成，无需任何外部音频文件
+  // 浏览器要求先有用户交互才能出声，所以在首次触摸/点击时初始化
+  // 【复用说明】原本是 startGame() 内部 const，现提升到全局词法环境，
+  // 让保卫派对场景引擎也能调用同一套 shoot() / jump() 接口；对象内部
+  // 合成逻辑未复制、未新增音频文件，射击派对调用方式不变、行为不变。
+  // ============================================================
+  const SoundFX = {
+    ctx: null,
+    master: null,
+    enabled: true,
+    init() {
+      if (this.ctx) return;
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AC();
+        this.master = this.ctx.createGain();
+        this.master.gain.value = 0.35;
+        this.master.connect(this.ctx.destination);
+      } catch (e) { this.enabled = false; }
+    },
+    resume() {
+      if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    },
+    tone(type, freq, dur, vol, slideTo) {
+      if (!this.enabled || !this.ctx) return;
+      const t = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t);
+      if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+      gain.gain.setValueAtTime(vol, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.connect(gain); gain.connect(this.master);
+      osc.start(t); osc.stop(t + dur);
+    },
+    noise(dur, vol, lowpass) {
+      if (!this.enabled || !this.ctx) return;
+      const t = this.ctx.currentTime;
+      const bufSize = this.ctx.sampleRate * dur;
+      const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = lowpass || 1000;
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(vol, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      src.connect(filter); filter.connect(gain); gain.connect(this.master);
+      src.start(t);
+    },
+    shoot(scale) { this.tone('square', 620, 0.10, 0.25 * (scale == null ? 1 : scale), 180); },
+    tankShoot()  {
+      this.tone('sawtooth', 90,  0.45, 0.75, 30);
+      this.tone('square',   55,  0.40, 0.70, 25);
+      this.tone('sawtooth', 220, 0.25, 0.35, 50);
+      this.noise(0.45, 0.55, 350);
+    },
+    hit()        { this.tone('triangle', 300, 0.08, 0.3, 120); },
+    explode()    { this.noise(0.5, 0.6, 600); this.tone('sawtooth', 120, 0.4, 0.3, 40); },
+    pickup()     { this.tone('sine', 660, 0.10, 0.3, 990); setTimeout(()=>this.tone('sine', 990, 0.12, 0.3, 1320), 90); },
+    radio()      { this.tone('square', 440, 0.15, 0.3, 440); setTimeout(()=>this.tone('square', 440, 0.15, 0.3, 440), 200); },
+    jump(scale)  { this.tone('sine', 380, 0.15, 0.25 * (scale == null ? 1 : scale), 720); },
+    hurt()       { this.tone('sawtooth', 220, 0.12, 0.3, 110); }
+  };
+
+  function initAudioOnce() {
+    SoundFX.init();
+    SoundFX.resume();
+  }
+  window.addEventListener('touchstart', initAudioOnce, { once: true, passive: true });
+  window.addEventListener('mousedown', initAudioOnce, { once: true });
+  // 同时挂一份 window 引用：保卫派对在另一个脚本块中调用时，
+  // 不依赖跨脚本块全局 const 的词法解析，也不会踩到 TDZ。
+  window.PartySoundFX = SoundFX;
+
+
+  function startGame(container) {
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // ================= 数值常量 =================
+    const GRAVITY = 0.8;
+    const JUMP_FORCE = -20;
+    const MOVE_SPEED = 5;
+    const FRICTION = 0.85;
+    const BULLET_SPEED = 12;
+    const SHELL_SPEED = 15;
+    const FIRE_RATE = 200;
+    const ENEMY_FIRE_RATE = 700;
+    const LUNI_FIRE_RATE = 1600;
+    const FLOOR_MARGIN = 50;
+    const RESPAWN_TIME = 2000;
+
+    const RADIO_SPAWN_INTERVAL = 35000;
+    const TANK_RELOAD_TIME = 3000;
+    const MEDKIT_SPAWN_INTERVAL = 5000;
+    const MAX_MEDKITS = 3;
+    let radio = null;
+    let lastRadioSpawnTime = 0;
+    let medkits = [];
+    let lastMedkitSpawnTime = 0;
+
+    let bullets = [];
+    let lastShootTime = 0;
+    let lastEnemyShootTime = 0;
+    let lastLuniShootTime = 0;
+
+    let isPaused = false;
+    let lastFrameTime = 0;
+
+    function createEntity(id, name, color, isPlayer) {
+      return {
+        id: id, name: name, color: color, isPlayer: isPlayer,
+        x: 0, y: 0, vx: 0, vy: 0,
+        width: 0, height: 0,
+        isGrounded: false, facingRight: isPlayer,
+        hp: 100, maxHp: 100,
+        isDead: false, respawnTimer: 0,
+        img: new Image(),
+        aiMoveTimer: 0, aiMoveDir: 0, aiJumpCooldown: 0,
+        inTank: false,
+        tankHp: 300, tankMaxHp: 300, tankLastShoot: 0,
+        preTankHp: 100,
+        isTeleporting: false,
+        kills: 0
+      };
+    }
+
+    const player = createEntity('player', '蓝莓喵', '#00bfff', true);
+    const enemy = createEntity('enemy', '青苹果', '#32CD32', false);
+    const luni = createEntity('luni', '红草莓', '#ff3333', false);
+    const entities = [player, enemy, luni];
+
+    player.img.src = 'catgirl.png';
+    enemy.img.src = 'enemy.png';
+    luni.img.src = 'luni.png';
+    const radioImg = new Image(); radioImg.src = 'radio.png';
+    const tankImg = new Image(); tankImg.src = 'tank.png';
+    const medkitImg = new Image();
+    medkitImg.src = 'medkit.png';
+
+    let loadedImages = 0;
+    function checkLoad() {
+      loadedImages++;
+      if (loadedImages === 6) {
+        document.getElementById('loading').style.display = 'none';
+        initPositions();
+      }
+    }
+    player.img.onload = checkLoad; enemy.img.onload = checkLoad; luni.img.onload = checkLoad;medkitImg.onload = checkLoad;
+
+    radioImg.onload = checkLoad; tankImg.onload = checkLoad;
+
+    [player.img, enemy.img, luni.img, medkitImg, radioImg, tankImg].forEach(img => {
+  img.onerror = () => {
+    console.error('图片加载失败：', img.src);
+    checkLoad();
+  };
+});
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      initPositions();
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    function initPositions() {
+      if (loadedImages < 1) return;
+      const targetHeight = window.innerHeight * 0.28;
+
+      entities.forEach(ent => {
+        // 图片尚未加载完成或尺寸异常时，给一个合理的默认宽高，避免 NaN/Infinity
+        if (!ent.img.complete || ent.img.height <= 0) {
+          ent.height = targetHeight;
+          ent.width = targetHeight * 0.6;
+          return;
+        }
+        ent.height = targetHeight;
+        ent.width = ent.img.width * (targetHeight / ent.img.height);
+      });
+
+      respawn(player); respawn(enemy); respawn(luni);
+    }
+
+    function respawn(entity) {
+      entity.hp = entity.maxHp;
+      entity.isDead = false;
+      entity.inTank = false;
+      entity.vx = 0; entity.vy = 0;
+
+      entity.height = window.innerHeight * 0.28;
+      // 图片未加载好时给一个默认宽高，避免除零/NaN
+      entity.width = (!entity.img.complete || entity.img.height <= 0)
+        ? entity.height * 0.6
+        : entity.img.width * (entity.height / entity.img.height);
+
+      if (entity.isPlayer) entity.x = canvas.width * 0.1;
+      else if (entity.id === 'enemy') entity.x = canvas.width * 0.85;
+      else entity.x = canvas.width * 0.5;
+
+      entity.y = canvas.height - FLOOR_MARGIN - entity.height;
+      entity.facingRight = entity.isPlayer;
+    }
+
+    const controls = { jump: false, shoot: false };
+    let joystickInputX = 0;
+
+    // ---------------- 摇杆 ----------------
+    const zone = document.getElementById('joystick-zone');
+    const base = document.getElementById('joystick-base');
+    const stick = document.getElementById('joystick-stick');
+
+    let joystickTouchId = null;
+    let startTouchX = 0;
+    const maxDist = 35;
+
+    zone.addEventListener('touchstart', (e) => {
+      if (joystickTouchId !== null) return;
+      const touch = e.changedTouches[0];
+      joystickTouchId = touch.identifier;
+      startTouchX = touch.clientX;
+      base.style.left = (startTouchX - 60) + 'px';
+      base.style.bottom = (window.innerHeight - touch.clientY - 60) + 'px';
+      e.preventDefault();
+    }, {passive: false});
+
+    zone.addEventListener('touchmove', (e) => {
+      if (joystickTouchId === null) return;
+      for (let i = 0; i < e.touches.length; i++) {
+        if (e.touches[i].identifier === joystickTouchId) {
+          const touchX = e.touches[i].clientX;
+          let dx = touchX - startTouchX;
+          if (dx > maxDist) dx = maxDist;
+          if (dx < -maxDist) dx = -maxDist;
+          stick.style.transform = `translate(calc(-50% + ${dx}px), -50%)`;
+          joystickInputX = dx / maxDist;
+          e.preventDefault();
+          return;
+        }
+      }
+    }, {passive: false});
+
+    function resetJoystick(e) {
+      if (joystickTouchId === null) return;
+      let touchEnded = false;
+      if (e.type === 'touchend' || e.type === 'touchcancel') {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === joystickTouchId) {
+            touchEnded = true;
+            break;
+          }
+        }
+      }
+      if (touchEnded) {
+        joystickTouchId = null;
+        joystickInputX = 0;
+        stick.style.transform = `translate(-50%, -50%)`;
+        base.style.left = '40px';
+        base.style.bottom = '40px';
+      }
+    }
+
+    zone.addEventListener('touchend', resetJoystick, {passive: false});
+    zone.addEventListener('touchcancel', resetJoystick, {passive: false});
+
+    // 鼠标兼容
+    let isMouseDown = false;
+    zone.addEventListener('mousedown', (e) => {
+      isMouseDown = true;
+      startTouchX = e.clientX;
+      base.style.left = (startTouchX - 60) + 'px';
+      base.style.bottom = (window.innerHeight - e.clientY - 60) + 'px';
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!isMouseDown) return;
+      let dx = e.clientX - startTouchX;
+      if (dx > maxDist) dx = maxDist;
+      if (dx < -maxDist) dx = -maxDist;
+      stick.style.transform = `translate(calc(-50% + ${dx}px), -50%)`;
+      joystickInputX = dx / maxDist;
+    });
+    window.addEventListener('mouseup', () => {
+      if (isMouseDown) {
+        isMouseDown = false;
+        joystickInputX = 0;
+        stick.style.transform = `translate(-50%, -50%)`;
+        base.style.left = '40px';
+        base.style.bottom = '40px';
+      }
+    });
+
+    // ---------------- 按键绑定 ----------------
+    function bindBtn(id, key) {
+      const btn = document.getElementById(id);
+      const start = (e) => { e.preventDefault(); controls[key] = true; };
+      const end = (e) => { e.preventDefault(); controls[key] = false; };
+      btn.addEventListener('touchstart', start, {passive: false});
+      btn.addEventListener('touchend', end, {passive: false});
+      btn.addEventListener('touchcancel', end, {passive: false});
+      btn.addEventListener('mousedown', start);
+      btn.addEventListener('mouseup', end);
+      btn.addEventListener('mouseleave', end);
+    }
+    bindBtn('btn-jump', 'jump');
+    bindBtn('btn-shoot', 'shoot');
+
+    // ---------------- 暂停 ----------------
+    // 统一的状态管理函数：同时控制暂停按钮图标、暂停遮罩/标题、以及
+    // 暂停态下的 back.png 返回按钮。三者在视觉上绑定为同一个"暂停态"，
+    // 这样点击 back.png 返回时暂停态会自动解除，不会留下悬挂的暂停遮罩。
+    var pauseBtnEl = document.getElementById('btn-pause');
+    var pauseBackEl = document.getElementById('btn-pause-back');
+    function setPaused(val) {
+      if (val === isPaused) return;   // 状态未变化时不重复处理
+      isPaused = val;
+      pauseBtnEl.innerText = isPaused ? '▶' : '||';
+      if (pauseBackEl) {
+        pauseBackEl.classList.toggle('show', isPaused);
+      }
+      // 同步切换暂停遮罩层：进入暂停时显示“暂停”文字，退出时隐藏
+      var pauseOverlayEl = document.getElementById('pause-overlay');
+      if (pauseOverlayEl) {
+        pauseOverlayEl.classList.toggle('show', isPaused);
+      }
+      if (!isPaused) {
+        // 从暂停恢复：把暂停期间累积的时间差补回所有计时器，
+        // 避免解冻后"快进"式的一瞬间连发、连刷道具或连死。
+        const now = Date.now();
+        const delta = now - lastFrameTime;
+        entities.forEach(ent => {
+          if (ent.isDead) ent.respawnTimer += delta;
+          ent.aiMoveTimer += delta;
+          ent.aiJumpCooldown += delta;
+          ent.tankLastShoot += delta;
+        });
+        lastShootTime += delta;
+        lastEnemyShootTime += delta;
+        lastLuniShootTime += delta;
+        lastRadioSpawnTime += delta;
+        lastMedkitSpawnTime += delta;
+      } else {
+        lastFrameTime = Date.now();
+      }
+    }
+
+    // ---------------- 彻底退出本局 ----------------
+    // 关键修复：之前点 back.png 返回后游戏仍在后台运行，原因是只把
+    // game-container 隐藏、isPaused 置 true，但 requestAnimationFrame
+    // 循环没取消、计时器没清零、实体和子弹没清空，引擎其实还在跑。
+    // 现在新增 exitGame()：取消动画帧 → 重置所有局内状态 → 清空画布，
+    // 并保留 startGame 只启动一次的前提，下次进局能全新初始化。
+    function resetGameState() {
+      // 1) 取消主循环：这是最重要的一步，否则 update() 会一直执行
+      if (animFrameId) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = 0;
+      }
+
+      // 2) 清空局内数据：实体、子弹、复活计时、开火冷却、道具刷新计时全部归零
+      bullets.length = 0;
+      entities.forEach(ent => {
+        ent.hp = ent.maxHp;
+        ent.isDead = false;
+        ent.respawnTimer = 0;
+        ent.inTank = false;
+        ent.tankHp = ent.tankMaxHp;
+        ent.vx = 0; ent.vy = 0;
+        ent.kills = 0;
+        ent.aiMoveTimer = 0;
+        ent.aiMoveDir = 0;
+        ent.aiJumpCooldown = 0;
+        ent.tankLastShoot = 0;
+        ent.isTeleporting = false;
+      });
+      lastShootTime = 0;
+      lastEnemyShootTime = 0;
+      lastLuniShootTime = 0;
+      lastRadioSpawnTime = 0;
+      lastMedkitSpawnTime = 0;
+      lastFrameTime = 0;
+
+      // 3) 清空画布，避免返回后 canvas 上还残留上一局的画面
+      if (ctx && canvas) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // 4) 关闭音效：避免返回后还有音效在播放
+      if (SoundFX && SoundFX.master) {
+        try { SoundFX.master.gain.value = 0; } catch (e) {}
+      }
+
+      // 5) 清空播报栏与装填条
+      var feed = document.getElementById('kill-feed');
+      if (feed) feed.innerHTML = '';
+      var reloadBar = document.getElementById('reload-bar');
+      if (reloadBar) reloadBar.style.transform = 'scaleX(0)';
+      var reloadContainer = document.getElementById('reload-bar-container');
+      if (reloadContainer) reloadContainer.style.display = 'none';
+
+      // 6) 重置操作输入与摇杆状态，避免返回时还按着方向键、再进来直接乱跑
+      controls.left = false; controls.right = false;
+      controls.jump = false; controls.shoot = false;
+      joystickInputX = 0;
+      var stick = document.getElementById('joystick-stick');
+      var base = document.getElementById('joystick-base');
+      if (stick) stick.style.transform = 'translate(-50%, -50%)';
+      if (base) { base.style.left = '40px'; base.style.bottom = '40px'; }
+    }
+
+    function exitGame() {
+      // 先解除暂停，让所有状态（遮罩、按钮、isPaused）都回到非暂停态
+      setPaused(false);
+      // 重置并停掉引擎
+      resetGameState();
+      // 标记本局已结束，下次进局会重新初始化（而不是接着旧局跑）
+      gameStarted = false;
+      // 隐藏游戏容器并做短促淡出，回到派对选择
+      gameContainer.classList.add('fading-out');
+      setTimeout(function () {
+        gameContainer.style.display = 'none';
+        gameContainer.classList.remove('fading-out');
+        gameContainer.style.opacity = '';
+        whiteScreen.classList.add('show');
+        whiteScreen2.classList.remove('show');
+        gameHint.style.display = 'none';
+        // 恢复音效音量（为下一局准备）
+        if (SoundFX && SoundFX.master) {
+          try { SoundFX.master.gain.value = 0.35; } catch (e) {}
+        }
+      }, 180);
+    }
+
+    pauseBtnEl.addEventListener('click', (e) => {
+      e.preventDefault();
+      // 第一次点：进入暂停 → back.png 出现（状态绑定）
+      // 第二次点：退出暂停 → back.png 消失（状态绑定）
+      // 这就实现了"先点暂停才出，再点暂停就消失"的联动效果。
+      setPaused(!isPaused);
+    });
+
+    // 退出确认浮层逻辑
+    var exitConfirm = document.getElementById('exit-confirm');
+    function openExitConfirm() {
+      if (!exitConfirm) { exitGame(); return; }
+      // 先暂停（如果还没暂停的话），再弹确认
+      if (!isPaused) setPaused(true);
+      exitConfirm.classList.add('show');
+    }
+    function closeExitConfirm() {
+      if (exitConfirm) exitConfirm.classList.remove('show');
+    }
+    var exitOk = document.getElementById('exit-ok');
+    var exitCancel = document.getElementById('exit-cancel');
+    if (exitOk) {
+      exitOk.addEventListener('click', function () {
+        closeExitConfirm();
+        exitGame();                 // 确认退出：彻底停掉引擎并返回
+      });
+      exitOk.addEventListener('touchend', function (e) {
+        e.preventDefault();
+        closeExitConfirm();
+        exitGame();
+      });
+    }
+    if (exitCancel) {
+      exitCancel.addEventListener('click', function () {
+        closeExitConfirm();
+        // 留在局内：保持暂停态（方便玩家回来接着玩），按钮图标已正确显示 ▶
+      });
+      exitCancel.addEventListener('touchend', function (e) {
+        e.preventDefault();
+        closeExitConfirm();
+      });
+    }
+    if (exitConfirm) {
+      // 点击半透明背景 = 取消退出
+      exitConfirm.addEventListener('click', function (e) {
+        if (e.target === exitConfirm) closeExitConfirm();
+      });
+    }
+
+    // 暂停态下的 back.png：点击后弹出“退出本局”确认浮层，
+    // 而不是直接返回——这是修复“返回后游戏仍在后台运行”的关键一环。
+    if (pauseBackEl) {
+      pauseBackEl.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (!isPaused) return;      // 非暂停态不响应（按钮此时隐藏，双重保险）
+        openExitConfirm();           // 先暂停 + 弹确认
+      });
+      pauseBackEl.addEventListener('touchend', function (e) {
+        e.preventDefault();
+        if (!isPaused) return;
+        openExitConfirm();
+      });
+    }
+
+    // ---------------- 播报 ----------------
+    function addFeedMessage(text, color) {
+      const feed = document.getElementById('kill-feed');
+      const div = document.createElement('div');
+      div.className = 'feed-msg';
+      div.innerHTML = text;
+      if (color) div.style.borderLeft = `4px solid ${color}`;
+      feed.appendChild(div);
+
+      if (feed.children.length > 4) {
+        feed.removeChild(feed.firstChild);
+      }
+
+      setTimeout(() => {
+        div.classList.add('fade-out');
+        setTimeout(() => {
+          if (div.parentNode) div.parentNode.removeChild(div);
+        }, 500);
+      }, 4000);
+    }
+
+    // ---------------- 开火 ----------------
+    function fireBullet(shooter) {
+      const now = Date.now();
+      if (shooter.isPlayer) {
+        if (now - lastShootTime < FIRE_RATE) return;
+        lastShootTime = now;
+      } else if (shooter.id === 'enemy') {
+        if (now - lastEnemyShootTime < (shooter.id === 'enemy' ? ENEMY_FIRE_RATE : LUNI_FIRE_RATE)) return;
+        lastEnemyShootTime = now;
+      } else {
+        if (now - lastLuniShootTime < ENEMY_FIRE_RATE) return;
+        lastLuniShootTime = now;
+      }
+
+      let gx = shooter.width * 0.45;
+      let gy = shooter.isPlayer ? shooter.height * 0.05 : shooter.height * 0.10;
+
+      if (shooter.inTank) {
+        gx = shooter.width * 0.45;
+        gy = -shooter.height * 0.15;
+      }
+
+      if (shooter.inTank) SoundFX.tankShoot(); else SoundFX.shoot();
+
+      bullets.push({
+        x: shooter.x + shooter.width / 2 + (shooter.facingRight ? gx : -gx),
+        y: shooter.y + shooter.height / 2 + gy,
+        vx: shooter.facingRight ? (shooter.inTank ? SHELL_SPEED : BULLET_SPEED) : -(shooter.inTank ? SHELL_SPEED : BULLET_SPEED),
+        size: shooter.inTank ? 15 : shooter.width * 0.04,
+        ownerId: shooter.id,
+        isShell: shooter.inTank,
+        color: shooter.color
+      });
+    }
+
+    // ---------------- 道具生成 ----------------
+    function spawnRadio() {
+  if (radio !== null) return;
+
+  const RADIO_SIZE = 20;
+  const margin = 60;                       // 离左右边缘留 60px 安全距离
+
+  const minX = margin;
+  const maxX = canvas.width - margin - RADIO_SIZE;
+
+  // 屏幕太窄就不刷，防止计算出负数
+  if (maxX <= minX) return;
+
+  const randomX = minX + Math.random() * (maxX - minX);
+
+  radio = {
+    x: randomX,
+    y: canvas.height - FLOOR_MARGIN - RADIO_SIZE,
+    width: RADIO_SIZE,
+    height: RADIO_SIZE,
+    bornAt: Date.now()                     
+    // 记录生成时间，方便以后加超时回收
+  };
+}
+
+    function spawnMedkit() {
+      if (medkits.length >= MAX_MEDKITS) return;
+      const randomX = Math.random() * (canvas.width - 100) + 50;
+      const size = 40;
+      for (let m of medkits) {
+        if (Math.abs(m.x - randomX) < 80) return;
+      }
+      medkits.push({ x: randomX, y: canvas.height - FLOOR_MARGIN - size, width: size, height: size, pulse: 0 });
+    }
+
+    // ---------------- AI ----------------
+    function updateAI(ent) {
+      if (ent.isDead) return;
+
+      let targets = entities.filter(e => e.id !== ent.id && !e.isDead);
+      if (targets.length === 0) return;
+
+      let target = targets[0];
+      let minDist = Math.abs(ent.x - target.x);
+      for (let i = 1; i < targets.length; i++) {
+        let d = Math.abs(ent.x - targets[i].x);
+        if (d < minDist) { minDist = d; target = targets[i]; }
+      }
+
+      let targetX = target.x;
+      let seekItem = false;
+
+      if (!ent.inTank && radio !== null) {
+        targetX = radio.x;
+        seekItem = true;
+      } else if (!ent.inTank && ent.hp < ent.maxHp && medkits.length > 0) {
+        let closest = medkits[0];
+        let mDist = Math.abs(ent.x - closest.x);
+        for (let i = 1; i < medkits.length; i++) {
+          let dist = Math.abs(ent.x - medkits[i].x);
+          if (dist < mDist) { mDist = dist; closest = medkits[i]; }
+        }
+        targetX = closest.x;
+        seekItem = true;
+      }
+
+      ent.facingRight = targetX > ent.x;
+
+      if (ent.inTank) {
+        if (Date.now() - ent.tankLastShoot > TANK_RELOAD_TIME) {
+          fireBullet(ent); ent.tankLastShoot = Date.now();
+        }
+      } else if (!seekItem) {
+        fireBullet(ent);
+      }
+
+      const fast = false;
+      if (Date.now() > ent.aiMoveTimer) {
+        const rand = Math.random();
+        if (rand < 0.4) ent.aiMoveDir = -1;
+        else if (rand < 0.7) ent.aiMoveDir = 1;
+        else ent.aiMoveDir = 0;
+        ent.aiMoveTimer = Date.now() + (1000 + Math.random() * 1500);
+      }
+
+      if (seekItem) ent.vx += (targetX > ent.x) ? (fast ? 2.5 : 1.2) : (fast ? -2.5 : -1.2);
+      else {
+        if (ent.aiMoveDir === -1) ent.vx -= (fast ? 1 : 0.5);
+        else if (ent.aiMoveDir === 1) ent.vx += (fast ? 1 : 0.5);
+        else ent.vx *= FRICTION;
+      }
+
+      let speed = ent.inTank ? MOVE_SPEED * 0.4 : MOVE_SPEED * (fast ? 1.0 : 0.6);
+      if (ent.vx > speed) ent.vx = speed;
+      if (ent.vx < -speed) ent.vx = -speed;
+      if (Math.abs(ent.vx) < 0.1) ent.vx = 0;
+
+      if (ent.isGrounded && Date.now() > ent.aiJumpCooldown && !ent.inTank) {
+        let dodge = false;
+        for (let b of bullets) {
+          if (b.ownerId !== ent.id && Math.abs(b.x - ent.x) < 150 && Math.abs(b.y - (ent.y + ent.height / 2)) < 50) {
+            dodge = true; break;
+          }
+        }
+        if (dodge) {
+          ent.vy = JUMP_FORCE;
+          ent.isGrounded = false;
+          SoundFX.jump();
+          ent.aiJumpCooldown = Date.now() + (ent.id === 'enemy' ? 1000 : 2200);
+        }
+      }
+    }
+
+    // ---------------- 主更新 ----------------
+    function update() {
+      if (loadedImages < 5 || isPaused) return;
+      const now = Date.now();
+
+      if (now - lastRadioSpawnTime > RADIO_SPAWN_INTERVAL) { spawnRadio(); lastRadioSpawnTime = now; }
+      if (now - lastMedkitSpawnTime > MEDKIT_SPAWN_INTERVAL) { spawnMedkit(); lastMedkitSpawnTime = now; }
+
+      entities.forEach(ent => {
+        if (ent.isDead && now > ent.respawnTimer) respawn(ent);
+      });
+
+      // ---- 玩家操作 ----
+      if (!player.isDead) {
+        if (controls.shoot && !player.inTank) fireBullet(player);
+
+        if (joystickInputX !== 0) {
+          player.vx += joystickInputX * 1.8;
+          player.facingRight = joystickInputX > 0;
+        } else {
+          player.vx *= FRICTION;
+        }
+
+        let speed = player.inTank ? MOVE_SPEED * 0.4 : MOVE_SPEED;
+        if (player.vx > speed) player.vx = speed;
+        if (player.vx < -speed) player.vx = -speed;
+        if (Math.abs(player.vx) < 0.1) player.vx = 0;
+
+        if (controls.jump && player.isGrounded && !player.inTank) {
+          player.vy = JUMP_FORCE; player.isGrounded = false;
+          SoundFX.jump();
+        }
+      }
+
+      // ---- AI ----
+      updateAI(enemy);
+      updateAI(luni);
+
+      // ---- 物理 + 道具拾取 ----
+      entities.forEach(ent => {
+        if (ent.isDead) return;
+
+        ent.vy += GRAVITY;
+        ent.x += ent.vx;
+        ent.y += ent.vy;
+
+        const floorY = canvas.height - FLOOR_MARGIN;
+        if (ent.y + ent.height > floorY) {
+          ent.y = floorY - ent.height;
+          ent.vy = 0; ent.isGrounded = true;
+          ent.isTeleporting = false;
+        } else {
+          ent.isGrounded = false;
+        }
+
+        if (ent.x < 0) ent.x = 0;
+        if (ent.x + ent.width > canvas.width) ent.x = canvas.width - ent.width;
+
+        // 拾取对讲机 → 变坦克
+        if (!ent.inTank && radio !== null) {
+          if (ent.x < radio.x + radio.width && ent.x + ent.width > radio.x &&
+              ent.y < radio.y + radio.height && ent.y + ent.height > radio.y) {
+
+            ent.inTank = true;
+            ent.preTankHp = ent.hp;
+            ent.tankHp = ent.tankMaxHp;
+            ent.tankLastShoot = 0;
+
+            const baseH = window.innerHeight * 0.28;
+            ent.height = baseH * 1.5;
+            ent.width = tankImg.width * (ent.height / tankImg.height);
+
+            ent.y = canvas.height - FLOOR_MARGIN - ent.height;
+            radio = null;
+            SoundFX.radio();
+            addFeedMessage(`<span style="color:${ent.color}">${ent.name}</span> 捡到了对讲机并呼叫了坦克`, ent.color);
+          }
+        }
+
+        // 拾取急救包
+        for (let i = medkits.length - 1; i >= 0; i--) {
+          let m = medkits[i];
+          if (ent.x < m.x + m.width && ent.x + ent.width > m.x &&
+              ent.y < m.y + m.height && ent.y + ent.height > m.y) {
+            ent.hp = ent.maxHp;
+            medkits.splice(i, 1);
+            SoundFX.pickup();
+            addFeedMessage(`<span style="color:${ent.color}">${ent.name}</span> 捡到了急救包`, ent.color);
+          }
+        }
+      });
+
+      // ---- 角色之间的碰撞 ----
+      for (let i = 0; i < entities.length; i++) {
+        for (let j = i + 1; j < entities.length; j++) {
+          let a = entities[i], b = entities[j];
+          if (a.isDead || b.isDead) continue;
+          if (!a.inTank && !b.inTank) continue;
+
+          let aInAir = !a.isGrounded, bInAir = !b.isGrounded;
+
+          if (!aInAir && !bInAir && a.x < b.x + b.width && a.x + a.width > b.x) {
+            let overlap = Math.min(a.x + a.width - b.x, b.x + b.width - a.x);
+            if (overlap > 2) {
+              if (a.inTank && !b.inTank) {
+                if (a.x < b.x) b.x += overlap; else b.x -= overlap;
+              }
+              else if (!a.inTank && b.inTank) {
+                if (b.x < a.x) a.x += overlap; else a.x -= overlap;
+              }
+              else {
+                if (a.x < b.x) { a.x -= overlap / 2; b.x += overlap / 2; }
+                else { a.x += overlap / 2; b.x -= overlap / 2; }
+              }
+            }
+            if (a.x < 0) a.x = 0;
+            if (a.x + a.width > canvas.width) a.x = canvas.width - a.width;
+            if (b.x < 0) b.x = 0;
+            if (b.x + b.width > canvas.width) b.x = canvas.width - b.width;
+          }
+
+          if (!a.isTeleporting && aInAir && !bInAir) {
+            let bCenter = b.x + b.width / 2;
+            let aCenter = a.x + a.width / 2;
+            if (aCenter > bCenter - 10 && aCenter < bCenter + 10) {
+              if (a.vx > 0) a.x = b.x + b.width + 5;
+              else if (a.vx < 0) a.x = b.x - a.width - 5;
+              a.isTeleporting = true;
+            }
+          }
+          if (!b.isTeleporting && bInAir && !aInAir) {
+            let aCenter = a.x + a.width / 2;
+            let bCenter = b.x + b.width / 2;
+            if (bCenter > aCenter - 10 && bCenter < aCenter + 10) {
+              if (b.vx > 0) b.x = a.x + a.width + 5;
+              else if (b.vx < 0) b.x = a.x - b.width - 5;
+              b.isTeleporting = true;
+            }
+          }
+        }
+      }
+
+      // ---- 子弹飞行与命中 ----
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        let b = bullets[i];
+        b.x += b.vx;
+
+        if (b.x < -50 || b.x > canvas.width + 50) {
+          bullets.splice(i, 1); continue;
+        }
+
+        for (let target of entities) {
+          if (target.isDead || target.id === b.ownerId) continue;
+
+          if (b.x > target.x && b.x < target.x + target.width &&
+              b.y > target.y && b.y < target.y + target.height) {
+
+            let killed = false;
+            SoundFX.hit();
+
+            if (target.inTank) {
+              let dmg = b.isShell ? (target.tankMaxHp * 0.4) : 15;
+              target.tankHp -= dmg;
+
+              if (target.tankHp <= 0) {
+                target.tankHp = 0;
+                target.inTank = false;
+                target.hp = target.preTankHp;
+                SoundFX.explode();
+
+                target.height = window.innerHeight * 0.28;
+                target.width = target.img.width * (target.height / target.img.height);
+                target.y = canvas.height - FLOOR_MARGIN - target.height;
+              }
+            } else {
+              let dmg = b.isShell ? (target.maxHp * 0.7) : 15;
+              target.hp -= dmg;
+              if (target.hp <= 0) {
+                target.hp = 0;
+                target.isDead = true;
+                target.respawnTimer = Date.now() + RESPAWN_TIME;
+                SoundFX.explode();
+                killed = true;
+              } else {
+                SoundFX.hurt();
+              }
+            }
+
+            if (killed) {
+              let killer = entities.find(e => e.id === b.ownerId);
+              if (killer) {
+                killer.kills++;
+                addFeedMessage(`<span style="color:${killer.color}">${killer.name}</span> 击杀了 <span style="color:${target.color}">${target.name}</span>`, '#ff3333');
+              }
+            }
+
+            bullets.splice(i, 1);
+            break;
+          }
+        }
+      }
+
+      // ---- 坦克按住开火 ----
+      if (player.inTank && controls.shoot) {
+        if (now - player.tankLastShoot > TANK_RELOAD_TIME) {
+          fireBullet(player);
+          player.tankLastShoot = now;
+        }
+      }
+    }
+
+    // ---------------- 装填进度条 ----------------
+    const reloadBarContainer = document.getElementById('reload-bar-container');
+    const reloadBar = document.getElementById('reload-bar');
+
+    function updateReloadBar() {
+      const now = Date.now();
+
+      if (player.isDead) {
+        reloadBarContainer.style.display = 'none';
+        return;
+      }
+
+      if (player.inTank) {
+        const progress = Math.min((now - player.tankLastShoot) / TANK_RELOAD_TIME, 1);
+        reloadBarContainer.style.display = 'block';
+        reloadBar.style.transform = `scaleX(${progress})`;
+        reloadBar.style.backgroundColor = progress >= 1 ? '#32CD32' : '#FF8C00';
+      } else if (now - lastShootTime < FIRE_RATE) {
+        const progress = (now - lastShootTime) / FIRE_RATE;
+        reloadBarContainer.style.display = 'block';
+        reloadBar.style.transform = `scaleX(${progress})`;
+        reloadBar.style.backgroundColor = '#FF8C00';
+      } else {
+        reloadBarContainer.style.display = 'none';
+      }
+    }
+
+    // ---------------- 绘制：对讲机 ----------------
+    function drawRadio() {
+      if (radio === null) return;
+
+      ctx.save();
+      const cx = radio.x + radio.width / 2;
+      const cy = radio.y + radio.height / 2;
+
+      ctx.translate(cx, cy);
+
+      if (radioImg.complete && radioImg.width > 0) {
+      ctx.drawImage(radioImg, -radio.width / 2, -radio.height / 2, radio.width, radio.height);
+
+      } else {
+        ctx.fillStyle = '#FFC800';
+        ctx.fillRect(-radio.width / 2, -radio.height / 2, radio.width, radio.height);
+      }
+      ctx.restore();
+    }
+
+    // ---------------- 绘制：急救包 ----------------
+    function drawMedkits() {
+  medkits.forEach(m => {
+    const cx = m.x + m.width / 2;
+    const cy = m.y + m.height / 2;
+    const s = m.width; // 重新补上变量s的定义
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    
+    // 光晕
+    ctx.beginPath();
+    ctx.arc(0, 0, m.width * 0.8, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 80, 80, 0.20)';
+    ctx.fill();
+
+    // 绘制新急救包图片
+    if (medkitImg.complete && medkitImg.width > 0) {
+      ctx.drawImage(medkitImg, -s / 2, -s / 2, s, s);
+    } else {
+      // 如果图片还没加载好，先画个红方块占位防崩溃
+      ctx.fillStyle = '#ff3333';
+      ctx.fillRect(-s / 2, -s / 2, s, s);
+    }
+
+    ctx.restore(); // 确保画布状态恢复
+  });
+}
+
+    // ---------------- 绘制：角色 ----------------
+        // 工具函数：画圆角矩形
+    function drawRoundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    // 工具函数：画倒三角
+    function drawInvertedTriangle(ctx, x, y, w, h, color) {
+      ctx.beginPath();
+      ctx.moveTo(x - w / 2, y);
+      ctx.lineTo(x + w / 2, y);
+      ctx.lineTo(x, y + h);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+        function drawEntity(ent) {
+      if (ent.isDead) return;
+
+      const cx = ent.x + ent.width / 2;
+      const cy = ent.y + ent.height / 2;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+
+      // 图片未加载好时用默认比例，避免除零/NaN
+      const safeRatio = (!ent.img.complete || ent.img.height <= 0)
+        ? 0.6
+        : (ent.img.width / ent.img.height);
+      const baseW = window.innerHeight * 0.28 * safeRatio;
+      const barW = baseW * 0.85;
+
+      const barH = 6;
+      const barY = ent.inTank ? (-ent.height - -55) : (-ent.height / 2 - 14);
+// ---- 角色本体 ----
+ctx.save();
+if (!ent.facingRight) ctx.scale(-1, 1);
+
+if (ent.inTank) {
+  // 坦克状态：只画坦克，不画人
+  if (tankImg && tankImg.complete && tankImg.width > 0) {
+    ctx.save();
+    ctx.globalAlpha = 1.0;
+    ctx.drawImage(tankImg, -ent.width / 2, -ent.height / 2, ent.width, ent.height);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = '#555';
+    ctx.fillRect(-ent.width / 2, -ent.height / 2, ent.width, ent.height);
+  }
+} else {
+  // 普通状态：只画人物
+  if (ent.img.complete && ent.img.width > 0) {
+    ctx.drawImage(ent.img, -ent.width / 2, -ent.height / 2, ent.width, ent.height);
+  } else {
+    ctx.fillStyle = ent.color;
+    ctx.fillRect(-ent.width / 2, -ent.height / 2, ent.width, ent.height);
+  }
+}
+
+  ctx.restore();
+      
+      // ---- 圆角血条 ----
+      const ratio = ent.inTank
+        ? Math.max(ent.tankHp / ent.tankMaxHp, 0)
+        : Math.max(ent.hp / ent.maxHp, 0);
+
+      // 底色
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(-barW / 2, barY, barW, barH, barH / 2);
+      else ctx.rect(-barW / 2, barY, barW, barH);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fill();
+
+      // 血量
+      if (ratio > 0) {
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(-barW / 2, barY, barW * ratio, barH, barH / 2);
+        else ctx.rect(-barW / 2, barY, barW * ratio, barH);
+        ctx.fillStyle = '#32CD32';
+        ctx.fill();
+      }
+
+      // 描边
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(-barW / 2, barY, barW, barH, barH / 2);
+      else ctx.rect(-barW / 2, barY, barW, barH);
+      ctx.strokeStyle = ent.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // ---- 玩家蓝色倒三角（血条正上方）----
+      if (ent.isPlayer) {
+        const tipY = barY - 5;
+        ctx.beginPath();
+        ctx.moveTo(0, tipY);
+        ctx.lineTo(-8, tipY - 13);
+        ctx.lineTo(8, tipY - 13);
+        ctx.closePath();
+        ctx.fillStyle = '#00BFFF';
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    // ---------------- 绘制：子弹 ----------------
+    function drawBullets() {
+      bullets.forEach(b => {
+        ctx.save();
+        ctx.beginPath();
+
+        if (b.isShell) {
+          // 炮弹：亮橙黄色带光晕
+          ctx.shadowColor = '#FF6600';
+          ctx.shadowBlur = 12;
+          ctx.fillStyle = '#FFB300';
+          ctx.arc(b.x, b.y, b.size / 2, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = '#FF4500';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else {
+          // 普通子弹：白色带角色色描边
+          ctx.shadowColor = b.color;
+          ctx.shadowBlur = 8;
+          ctx.fillStyle = '#ffffff';
+          ctx.arc(b.x, b.y, Math.max(b.size / 2, 3), 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = b.color;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      });
+    }
+
+    // ---------------- 绘制：复活倒计时 ----------------
+        function drawRespawnUI() {
+      if (!player.isDead) return;
+
+      const remain = Math.max(player.respawnTimer - Date.now(), 0);
+      const seconds = (remain / 1000).toFixed(1);
+
+      const cx = canvas.width / 2;
+      const cy = canvas.height * 0.28;
+
+      ctx.save();
+      ctx.textAlign = 'center';
+
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      const boxW = 190, boxH = 74;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(cx - boxW / 2, cy - boxH / 2, boxW, boxH, 10);
+      } else {
+        ctx.rect(cx - boxW / 2, cy - boxH / 2, boxW, boxH);
+      }
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 17px Arial';
+      ctx.fillText('复活倒计时', cx, cy - 4);
+
+      ctx.fillStyle = player.color;
+      ctx.font = 'bold 30px Arial';
+      ctx.fillText(seconds + 's', cx, cy + 28);
+
+      ctx.restore();
+    }
+
+    // ---------------- 绘制：击杀榜 ----------------
+        function drawLeaderboard() {
+      const sorted = entities.slice().sort((a, b) => b.kills - a.kills);
+
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 14px Arial';
+
+      const cellW = 100;
+      const totalW = sorted.length * cellW;
+      const startX = canvas.width / 2 - totalW / 2;
+      const baseY = 18;
+
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(startX - 10, baseY - 6, totalW + 20, 44, 8);
+      } else {
+        ctx.rect(startX - 10, baseY - 6, totalW + 20, 44);
+      }
+      ctx.fill();
+
+      sorted.forEach((ent, i) => {
+        const x = startX + i * cellW + cellW / 2;
+
+        ctx.fillStyle = ent.color;
+        ctx.font = 'bold 14px Arial';
+        ctx.fillText(ent.name, x, baseY + 12);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '13px Arial';
+        ctx.fillText('击杀 ' + ent.kills, x, baseY + 30);
+      });
+
+      ctx.restore();
+    }
+
+    // ---------------- 绘制总入口 ----------------
+        function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, canvas.height - FLOOR_MARGIN, canvas.width, FLOOR_MARGIN);
+      ctx.strokeStyle = '#d0d0d0';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, canvas.height - FLOOR_MARGIN);
+      ctx.lineTo(canvas.width, canvas.height - FLOOR_MARGIN);
+      ctx.stroke();
+
+      drawRadio();
+      drawMedkits();
+      entities.forEach(ent => drawEntity(ent));
+      drawBullets();
+      drawRespawnUI();
+      drawLeaderboard();
+
+      // 注：暂停文字已改为 DOM 遮罩层（#pause-overlay），不再在 canvas 上绘制，
+      // 避免返回派对选择后 canvas 残留“暂停”字样、或与复活倒计时层叠字。
+      // if (isPaused) { ... ctx.fillText('暂停', ...) ... }
+    }
+
+    // ---------------- 主循环 ----------------
+    // animFrameId 保存 requestAnimationFrame 的句柄，用于彻底退出游戏时
+    // 调用 cancelAnimationFrame 停掉循环，而不是只把 isPaused 置为 true
+    // （只置 true 会停更新，但循环仍在跑、计时器仍在累加，下次进局就乱了）。
+    let animFrameId = 0;
+
+    function gameLoop() {
+      animFrameId = requestAnimationFrame(gameLoop);
+      update();
+      draw();
+      updateReloadBar();
+    }
+
+    // ---------------- 启动 ----------------
+    resizeCanvas();
+    gameLoop();
+  }
+  </script>
+</body>
+</html>
